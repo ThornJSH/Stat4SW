@@ -1,0 +1,97 @@
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; color: #202124; }
+  .layout { display: flex; height: 100vh; }
+  .col { overflow-y: auto; padding: 10px; }
+  button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid #1a73e8; outline-offset: 1px; }
+  #varSearch { width: 100%; box-sizing: border-box; margin: 6px 0 2px; padding: 4px 6px; font: inherit; }
+  #varCount { font-size: 12px; min-height: 0; }
+  label.auto { display: block; margin: 6px 0 2px; font-size: 12px; color: #5f6368; }
+  .guide { background: #e8f0fe; border-left: 3px solid #1a73e8; padding: 6px 10px; margin: 8px 0; font-size: 12px; line-height: 1.5; color: #202124; }
+  .guide ol { margin: 4px 0; padding-left: 18px; }
+  .pane-vars { width: 210px; border-right: 1px solid #dadce0; background: #f8f9fa; }
+  .pane-setup { width: 250px; border-right: 1px solid #dadce0; }
+  .pane-result { flex: 1; min-width: 0; overflow: auto; padding: 10px 18px; }
+  .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .muted { color: #5f6368; }
+  button { font: inherit; padding: 2px 10px; border: 1px solid #dadce0; border-radius: 4px; background: #fff; cursor: pointer; }
+  button:hover { background: #f1f3f4; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.busy { opacity: .6; cursor: progress; }
+  .notice { color: #b06000; font-weight: 600; }
+  button.primary { background: #1a73e8; border-color: #1a73e8; color: #fff; padding: 5px 24px; margin-top: 12px; }
+  button.primary:hover:not(:disabled) { background: #1765cc; }
+  select { width: 100%; font: inherit; padding: 4px; margin-bottom: 10px; }
+
+  /* 변수 목록 */
+  ul#varlist { list-style: none; margin: 8px 0; padding: 0; }
+  ul#varlist li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 4px; cursor: default; user-select: none; }
+  ul#varlist li:hover { background: #e8eaed; }
+  ul#varlist li.used { color: #80868b; }
+  ul#varlist li.dim { opacity: .45; }
+  .var-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .var-miss { font-size: 11px; color: #b06000; }
+  .badge { font-size: 11px; padding: 0 6px; border-radius: 8px; color: #fff; }
+  .badge.scale { background: #1a73e8; }
+  .badge.ordinal { background: #188038; }
+  .badge.nominal { background: #a142f4; }
+  .badge.inferred { opacity: .55; }
+  #warnings { margin-top: 10px; color: #b06000; font-size: 12px; }
+  #warnings p { margin: 4px 0; }
+  .error { color: #c5221f; }
+
+  /* 역할 칸과 옵션 */
+  .role { margin-bottom: 10px; }
+  .role-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+  .role-box { min-height: 72px; border: 1px solid #dadce0; border-radius: 4px; padding: 4px; }
+  .chip { display: flex; align-items: center; justify-content: space-between; padding: 1px 6px; border-radius: 3px; }
+  .chip:hover { background: #e8f0fe; }
+  .chip button { border: none; background: none; padding: 0 4px; color: #5f6368; }
+  .desc { margin: 4px 0 2px; font-size: 12px; color: #5f6368; line-height: 1.4; }
+  .linkbtn { border: none; background: none; color: #1a73e8; padding: 2px 0; cursor: pointer; text-align: left; font: inherit; }
+  .linkbtn:hover { text-decoration: underline; }
+  .advisor { border: 1px solid #c6dafc; background: #f5f9ff; border-radius: 6px; padding: 8px; margin: 6px 0; }
+  .advisor[hidden] { display: none; }
+  .advisor .advisor-head { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+  .advisor .q { margin: 8px 0 4px; font-weight: bold; }
+  .advisor .choice { display: block; width: 100%; text-align: left; margin: 3px 0; padding: 5px 8px; border: 1px solid #dadce0; background: #fff; border-radius: 4px; cursor: pointer; font: inherit; }
+  .advisor .choice:hover { background: #e8f0fe; }
+  .advisor .card { border: 1px solid #dadce0; background: #fff; border-radius: 4px; padding: 6px 8px; margin: 6px 0; }
+  .advisor .card .rec { font-weight: bold; font-size: 14px; margin-bottom: 2px; }
+  .advisor .nav { margin-top: 6px; display: flex; gap: 12px; }
+  .advisor .warn { color: #b06000; }
+  .advisor ul { margin: 2px 0 0 16px; padding: 0; }
+  details.adv { margin-top: 4px; }
+  details.adv > summary { cursor: pointer; color: #5f6368; padding: 2px 0; }
+  details.adv[open] > summary { margin-bottom: 2px; }
+  .opts { margin-top: 6px; }
+  .opts label { display: block; padding: 1px 0; cursor: pointer; }
+  .opts .opts-title { font-weight: bold; margin-bottom: 2px; }
+  .opts label.num { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 3px 0; }
+  .opts label.num input { width: 80px; font: inherit; padding: 2px 4px; text-align: right; }
+  .opts label.num select { max-width: 170px; font: inherit; }
+  .opts .sub { margin: 1px 0 4px 20px; max-height: 120px; overflow: auto; }
+  .opts input.inline { width: 60px; font: inherit; padding: 1px 4px; text-align: right; }
+
+  /* 결과 */
+  .result-wrap { border-bottom: 1px solid #dadce0; margin-bottom: 18px; padding-bottom: 8px; }
+  .result-tools { display: flex; justify-content: space-between; color: #5f6368; font-size: 12px; }
+  .result-tools button { font-size: 12px; padding: 0 8px; }
+  .result h2 { font-size: 16px; margin: 6px 0 2px; }
+  table.spss { border-collapse: collapse; margin: 14px 0 4px; }
+  table.spss caption { text-align: left; font-weight: bold; padding-bottom: 4px; }
+  table.spss th { border-top: 2px solid #202124; border-bottom: 1px solid #202124; padding: 4px 10px; font-weight: normal; }
+  table.spss td { padding: 3px 10px; }
+  table.spss th, table.spss td { white-space: nowrap; }
+  table.spss tbody tr:last-child td { border-bottom: 2px solid #202124; }
+  table.spss tr.total td, table.spss tr.subtotal td { border-top: 1px solid #202124; }
+  table.spss tr.group td { border-top: 1px solid #c4c7c5; }
+  table.spss tr.strong td { font-weight: bold; }
+  table.spss .left { text-align: left; }
+  table.spss .right { text-align: right; font-variant-numeric: tabular-nums; }
+  table.spss th.right { text-align: right; }
+  .result .chart { margin: 14px 0 4px; }
+  .result .chart svg { max-width: 100%; height: auto; border: 1px solid #e0e3e7; }
+  .result .note { font-size: 12px; color: #5f6368; margin: 2px 0; }
+  .result .warn { font-size: 12px; color: #b06000; margin: 6px 0; }
+</style>

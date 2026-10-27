@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body { font: 13px/1.5 "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; color: #202124; margin: 14px 18px; }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    h2 { font-size: 13px; margin: 14px 0 4px; }
+    .muted { color: #5f6368; }
+    .warn { background: #fef7e0; border-left: 3px solid #f9ab00; padding: 5px 10px; margin: 8px 0; }
+    .ok { color: #188038; }
+    .error { color: #c5221f; }
+    code { background: #f1f3f4; padding: 0 4px; border-radius: 3px; }
+    .row { display: flex; gap: 8px; align-items: center; margin: 10px 0 4px; }
+    .row select { flex: 1; }
+    select, input[type=text] { font: inherit; padding: 4px 6px; border: 1px solid #c4c7c5; border-radius: 4px; }
+    button { font: inherit; padding: 4px 12px; border: 1px solid #dadce0; border-radius: 4px; background: #fff; cursor: pointer; }
+    button:hover:not(:disabled) { background: #f1f3f4; }
+    button:disabled { opacity: .5; cursor: default; }
+    button.primary { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+    button.primary:hover:not(:disabled) { background: #1765cc; }
+    .grid { display: grid; grid-template-columns: 90px 1fr; gap: 6px 10px; align-items: center; margin-top: 8px; }
+    .grid input, .grid select { width: 100%; }
+    table.vals { border-collapse: collapse; width: 100%; margin-top: 4px; }
+    table.vals th { text-align: left; font-weight: normal; color: #5f6368; border-bottom: 1px solid #c4c7c5; padding: 3px 6px; }
+    table.vals td { padding: 2px 6px; border-bottom: 1px solid #f1f3f4; }
+    table.vals td.r { text-align: right; width: 70px; color: #5f6368; }
+    table.vals td.k { width: 110px; font-variant-numeric: tabular-nums; }
+    table.vals input { width: 100%; }
+    .buttons { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+    #msg { margin-left: 6px; }
+  </style>
+</head>
+<body>
+  <h1>변수 설정 편집</h1>
+  <div class="muted">
+    <code>데이터</code> 탭 1행의 변수를 골라 라벨, 척도, 결측값 코드, 값 레이블을 입력하면 <code>변수정의</code> 탭에 자동으로 써 줍니다.
+    분석 창이 열려 있다면 저장한 뒤 분석 창의 <b>새로고침</b>을 누르세요.
+  </div>
+
+  <div class="row">
+    <select id="var" aria-label="변수"></select>
+    <button id="sync" type="button" title="데이터 탭에는 있는데 변수정의 탭에 없는 변수를 모두 추가합니다">정의 없는 변수 모두 추가</button>
+  </div>
+  <div id="summary" class="muted">불러오는 중…</div>
+  <div id="orphans" class="warn" style="display:none"></div>
+
+  <div id="form" style="display:none">
+    <div class="grid">
+      <label for="label">라벨</label>
+      <input id="label" type="text" maxlength="200" placeholder="결과표에 보일 이름 (비워 두면 변수명)">
+      <label for="scale">척도</label>
+      <select id="scale"></select>
+      <label for="missing">결측값 코드</label>
+      <input id="missing" type="text" placeholder="예: 99 또는 99, 999 (결측을 뜻하는 값)">
+    </div>
+    <div id="info" class="muted" style="margin-top:6px"></div>
+
+    <h2>값 레이블</h2>
+    <div id="valuesNote" class="muted" style="display:none"></div>
+    <div id="valuesBox"></div>
+
+    <div class="buttons">
+      <button id="save" class="primary" type="button">저장</button>
+      <button id="saveNext" type="button">저장하고 다음 변수</button>
+      <span id="msg"></span>
+    </div>
+  </div>
+
+  <script>
+    var state = { vars: [], current: null, dirty: false, truncated: false, loadedName: null, autoScale: '', hasLabels: false };
+
+    function $(id) { return document.getElementById(id); }
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+    }
+    function setMsg(html, cls) { $('msg').innerHTML = html ? '<span class="' + (cls || '') + '">' + html + '</span>' : ''; }
+    function fail(err) { $('summary').innerHTML = '<span class="error">' + esc(err.message || err) + '</span>'; $('form').style.display = 'none'; }
+
+    function renderList(info, keepName) {
+      state.vars = info.vars;
+      var done = info.vars.filter(function (v) { return v.defined; }).length;
+      $('summary').textContent = '변수 ' + info.vars.length + '개 중 ' + done + '개가 변수정의 탭에 있습니다. (사례 ' + info.n + '건)';
+      $('var').innerHTML = info.vars.map(function (v) {
+        return '<option value="' + esc(v.name) + '">' + esc(v.name) + (v.label ? ' — ' + esc(v.label) : '') + (v.defined ? '' : '  (정의 없음)') + '</option>';
+      }).join('');
+      if (keepName) $('var').value = keepName;
+      var o = $('orphans');
+      if (info.orphans.length) {
+        o.style.display = '';
+        o.innerHTML = '<b>데이터 탭 1행에 없는 변수가 변수정의 탭에 있습니다:</b> ' + info.orphans.map(esc).join(', ') +
+          '<br>이름이 바뀌었거나 지워진 변수입니다. <code>변수정의</code> 탭에서 직접 고치거나 지우세요.';
+      } else {
+        o.style.display = 'none';
+      }
+    }
+
+    function refreshList(keepName) {
+      google.script.run.withSuccessHandler(function (info) { renderList(info, keepName); }).withFailureHandler(fail).varEditorState();
+    }
+
+    // 연속 척도(직접 고른 것이거나 자동 판정 결과)는 값 레이블을 쓰지 않으므로 표를 숨긴다. 이미 적힌 값 레이블은 그대로 둔다.
+    function continuous() {
+      var s = $('scale').value || state.autoScale;
+      return s === '연속';
+    }
+    function updateValuesView() {
+      var hide = continuous();
+      $('valuesBox').style.display = hide ? 'none' : '';
+      var note = $('valuesNote');
+      note.style.display = hide ? '' : 'none';
+      note.textContent = '연속 척도의 변수는 값 레이블을 쓰지 않습니다.' + (state.hasLabels ? ' (이미 적어 둔 값 레이블은 저장해도 그대로 유지됩니다.)' : '') +
+        ' 1~5점 척도처럼 값마다 뜻이 있다면 위에서 척도를 서열이나 명목으로 바꾸세요.';
+    }
+
+    function renderForm(d) {
+      state.autoScale = d.autoScale || '';
+      state.hasLabels = d.values.some(function (v) { return v.label !== ''; });
+      state.loadedName = d.name;
+      state.truncated = d.truncated;
+      state.dirty = false;
+      $('form').style.display = '';
+      setMsg('');
+      $('label').value = d.label || '';
+      $('scale').innerHTML = '<option value="">자동 판정 (현재: ' + esc(d.autoScale) + ')</option>' +
+        ['명목', '서열', '연속'].map(function (s) { return '<option value="' + s + '">' + s + '</option>'; }).join('');
+      $('scale').value = d.scale || '';
+      $('missing').value = d.missingCodes || '';
+      $('info').textContent = '유효 ' + (d.n - d.missing) + '건 · 결측 ' + d.missing + '건 · 값 ' + d.valueCount + '가지';
+      if (d.truncated) {
+        $('valuesBox').innerHTML = '<div class="muted">값이 ' + d.valueCount + '가지라서 값 레이블 표를 만들지 않습니다. 값 레이블은 범주가 적은 변수(성별, 학년 등)에 씁니다. ' +
+          '이미 적어 둔 값 레이블은 저장해도 그대로 유지됩니다.</div>';
+      } else if (!d.values.length) {
+        $('valuesBox').innerHTML = '<div class="muted">값이 없습니다. (데이터가 비어 있거나 모두 결측입니다.)</div>';
+      } else {
+        $('valuesBox').innerHTML = '<table class="vals"><thead><tr><th>값</th><th>사례 수</th><th>레이블 (예: 남)</th></tr></thead><tbody>' +
+          d.values.map(function (v) {
+            return '<tr><td class="k">' + esc(v.key) + '</td><td class="r">' + (v.inData ? v.count : '—') + '</td>' +
+              '<td><input type="text" maxlength="60" data-key="' + esc(v.key) + '" value="' + esc(v.label) + '">' +
+              (v.inData ? '' : ' <span class="muted">(데이터에 없음)</span>') + '</td></tr>';
+          }).join('') + '</tbody></table>';
+      }
+      updateValuesView();
+      var first = continuous() ? null : $('valuesBox').querySelector('input');
+      if (first) first.focus(); else $('label').focus();
+    }
+
+    function load(name) {
+      $('form').style.display = 'none';
+      $('summary').dataset.busy = '1';
+      google.script.run.withSuccessHandler(renderForm).withFailureHandler(fail).varEditorLoad(name);
+    }
+
+    function collect() {
+      var values = [].map.call($('valuesBox').querySelectorAll('input[data-key]'), function (i) { return { key: i.dataset.key, label: i.value }; });
+      return { name: state.loadedName, label: $('label').value, scale: $('scale').value, missing: $('missing').value, values: values, keepValueLabels: state.truncated || continuous() };
+    }
+
+    function save(thenNext) {
+      var payload = collect();
+      setMsg('저장하는 중…', 'muted');
+      $('save').disabled = $('saveNext').disabled = true;
+      google.script.run
+        .withSuccessHandler(function (r) {
+          $('save').disabled = $('saveNext').disabled = false;
+          state.dirty = false;
+          var text = '저장했습니다 (변수정의 탭 ' + r.row + '행).';
+          if (r.warnings && r.warnings.length) text += '<br><span class="error">' + r.warnings.map(esc).join('<br>') + '</span>';
+          setMsg(text, 'ok');
+          var idx = state.vars.map(function (v) { return v.name; }).indexOf(payload.name);
+          var next = thenNext && idx >= 0 && idx + 1 < state.vars.length ? state.vars[idx + 1].name : null;
+          refreshList(next || payload.name);
+          if (next) setTimeout(function () { load(next); }, 150);
+        })
+        .withFailureHandler(function (err) {
+          $('save').disabled = $('saveNext').disabled = false;
+          setMsg(esc(err.message || err), 'error');
+        })
+        .varEditorSave(payload);
+    }
+
+    $('var').addEventListener('change', function () {
+      if (state.dirty && !confirm('저장하지 않은 변경이 있습니다. 버리고 다른 변수로 이동할까요?')) {
+        this.value = state.loadedName;
+        return;
+      }
+      load(this.value);
+    });
+    $('form').addEventListener('input', function () { state.dirty = true; });
+    $('scale').addEventListener('change', updateValuesView);
+    $('form').addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' || !e.target.matches('table.vals input')) return;
+      e.preventDefault();
+      var inputs = [].slice.call($('valuesBox').querySelectorAll('input[data-key]'));
+      var i = inputs.indexOf(e.target);
+      if (inputs[i + 1]) inputs[i + 1].focus(); else $('save').focus();
+    });
+    $('save').addEventListener('click', function () { save(false); });
+    $('saveNext').addEventListener('click', function () { save(true); });
+    $('sync').addEventListener('click', function () {
+      $('sync').disabled = true;
+      google.script.run
+        .withSuccessHandler(function (r) {
+          $('sync').disabled = false;
+          setMsg(r.added.length ? esc(r.added.length + '개 변수를 변수정의 탭에 추가했습니다: ' + r.added.join(', ')) : '추가할 변수가 없습니다. 모든 변수가 이미 변수정의 탭에 있습니다.', r.added.length ? 'ok' : 'muted');
+          $('form').style.display = state.loadedName ? '' : 'none';
+          refreshList(state.loadedName);
+        })
+        .withFailureHandler(function (err) { $('sync').disabled = false; setMsg(esc(err.message || err), 'error'); })
+        .varEditorSync();
+    });
+
+    google.script.run
+      .withSuccessHandler(function (info) {
+        renderList(info);
+        if (info.vars.length) load(info.vars[0].name);
+        else $('summary').textContent = '데이터 탭에 변수가 없습니다. 1행에 변수명을 입력하세요.';
+      })
+      .withFailureHandler(fail)
+      .varEditorState();
+  </script>
+</body>
+</html>

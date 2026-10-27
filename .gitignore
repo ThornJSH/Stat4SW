@@ -1,0 +1,14 @@
+node_modules/
+.clasprc.json
+.DS_Store
+Thumbs.db
+tests/ui/preview.html
+tests/ui/preview_varedit.html
+tests/ui/preview_compute.html
+commit_message.txt
+backup_gs/
+backup_gas.bat
+rename_to_gs.bat
+# 개발 시트·스크립트 주소는 저장소에 올리지 않는다 (.clasp.json.example 참고)
+.clasp.json
+doc/local/

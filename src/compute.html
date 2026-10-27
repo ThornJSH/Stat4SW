@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body { font: 13px/1.5 "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; color: #202124; margin: 14px 18px; }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    h2 { font-size: 13px; margin: 14px 0 4px; }
+    .muted { color: #5f6368; }
+    .warn { background: #fef7e0; border-left: 3px solid #f9ab00; padding: 5px 10px; margin: 8px 0; }
+    .ok { color: #188038; }
+    .error { color: #c5221f; }
+    code { background: #f1f3f4; padding: 0 4px; border-radius: 3px; }
+    select, input[type=text], input[type=number] { font: inherit; padding: 4px 6px; border: 1px solid #c4c7c5; border-radius: 4px; }
+    button { font: inherit; padding: 4px 12px; border: 1px solid #dadce0; border-radius: 4px; background: #fff; cursor: pointer; }
+    button:hover:not(:disabled) { background: #f1f3f4; }
+    button:disabled { opacity: .5; cursor: default; }
+    button.primary { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+    button.primary:hover:not(:disabled) { background: #1765cc; }
+    .modes { display: flex; gap: 16px; margin: 10px 0 6px; }
+    .modes label { cursor: pointer; }
+    #varlist { border: 1px solid #c4c7c5; border-radius: 4px; max-height: 170px; overflow-y: auto; padding: 4px 6px; margin-top: 4px; }
+    #varlist label { display: flex; gap: 6px; align-items: baseline; padding: 1px 0; cursor: pointer; }
+    #varlist label.off { color: #9aa0a6; cursor: default; }
+    .grid { display: grid; grid-template-columns: 150px 1fr; gap: 6px 10px; align-items: center; margin-top: 8px; }
+    .grid input[type=text], .grid input[type=number] { width: 140px; }
+    .tools { margin-top: 4px; }
+    .tools button { font-size: 12px; padding: 1px 8px; }
+    table.prev { border-collapse: collapse; width: 100%; margin-top: 6px; }
+    table.prev th { text-align: left; font-weight: normal; color: #5f6368; border-bottom: 1px solid #c4c7c5; padding: 3px 6px; }
+    table.prev td { padding: 2px 6px; border-bottom: 1px solid #f1f3f4; }
+    table.prev td.r { text-align: right; font-variant-numeric: tabular-nums; }
+    .buttons { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+    #msg { margin-left: 6px; }
+  </style>
+</head>
+<body>
+  <h1>변수 계산</h1>
+  <div class="muted">
+    계산한 결과는 <code>데이터</code> 탭의 <b>맨 오른쪽에 새 열</b>로 쓰고 <code>변수정의</code> 탭에도 등록합니다. 원본 열은 바꾸지 않습니다.
+    저장한 뒤 분석 창이 열려 있다면 <b>새로고침</b>을 누르세요.
+  </div>
+  <div id="summary" class="muted" style="margin-top:6px">불러오는 중…</div>
+
+  <div class="modes">
+    <label><input type="radio" name="mode" value="reverse" checked> 역문항 처리</label>
+    <label><input type="radio" name="mode" value="agg"> 합계·평균</label>
+    <label><input type="radio" name="mode" value="z"> z점수</label>
+  </div>
+  <div id="modeHelp" class="muted"></div>
+
+  <h2>변수 선택</h2>
+  <div class="tools">
+    <button id="selAll" type="button">숫자 변수 모두 선택</button>
+    <button id="selNone" type="button">선택 해제</button>
+    <span id="selCount" class="muted"></span>
+  </div>
+  <div id="varlist"></div>
+
+  <div id="optReverse" class="grid">
+    <label for="min">척도의 최솟값</label><input id="min" type="number" step="any">
+    <label for="max">척도의 최댓값</label><input id="max" type="number" step="any">
+    <label for="suffixR">새 변수 이름 접미사</label><input id="suffixR" type="text" value="_r" maxlength="20">
+  </div>
+  <div id="rangeHint" class="muted" style="margin-top:4px"></div>
+
+  <div id="optAgg" class="grid" style="display:none">
+    <label>계산</label>
+    <span><label><input type="radio" name="aggKind" value="mean" checked> 평균</label>&nbsp;&nbsp;<label><input type="radio" name="aggKind" value="sum"> 합계</label></span>
+    <label for="aggName">새 변수 이름</label><input id="aggName" type="text" value="평균" maxlength="60">
+    <label for="minValid">최소 유효 문항 수</label><input id="minValid" type="number" min="1" step="1">
+  </div>
+  <div id="aggHint" class="muted" style="display:none;margin-top:4px">유효한(결측이 아닌) 문항이 이 수 이상인 사례만 계산하고, 모자라면 빈 칸으로 둡니다. 기본은 선택한 문항 모두입니다.</div>
+
+  <div id="optZ" class="grid" style="display:none">
+    <label for="suffixZ">새 변수 이름 접미사</label><input id="suffixZ" type="text" value="_z" maxlength="20">
+  </div>
+
+  <div class="buttons">
+    <button id="preview" class="primary" type="button">미리보기</button>
+    <span id="msg"></span>
+  </div>
+
+  <div id="previewBox" style="display:none">
+    <h2>만들어질 열</h2>
+    <div id="previewWarn"></div>
+    <div id="previewTable"></div>
+    <div class="buttons">
+      <button id="apply" class="primary" type="button">데이터 탭에 추가</button>
+      <button id="cancel" type="button">취소</button>
+    </div>
+  </div>
+
+  <script>
+    var state = { vars: [], n: 0, minValidTouched: false };
+    var HELP = {
+      reverse: '값을 뒤집습니다: 새 값 = 최솟값 + 최댓값 − 값 (1~5점 척도라면 1↔5, 2↔4). 부정 문항을 다른 문항과 같은 방향으로 맞출 때 씁니다. 척도 범위 밖의 값은 결측이 됩니다.',
+      agg: '여러 문항을 하나로 합칩니다. 응답하지 않은 문항이 있을 수 있으면 합계보다 평균이 비교하기 좋습니다. 역문항은 먼저 역문항 처리를 하고 새 열을 고르세요.',
+      z: '평균이 0, 표준편차가 1이 되도록 표준화합니다: (값 − 평균) / 표준편차 (표본 표준편차).'
+    };
+
+    function $(id) { return document.getElementById(id); }
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+    }
+    function mode() { return document.querySelector('input[name=mode]:checked').value; }
+    function aggKind() { return document.querySelector('input[name=aggKind]:checked').value; }
+    function setMsg(html, cls) { $('msg').innerHTML = html ? '<span class="' + (cls || '') + '">' + html + '</span>' : ''; }
+    function fail(err) { $('summary').innerHTML = '<span class="error">' + esc(err.message || err) + '</span>'; }
+    function fmt(v) { return v === null || v === undefined || v === '' ? '' : (typeof v === 'number' ? String(Math.round(v * 1000) / 1000) : String(v)); }
+
+    function usable(v) {
+      if (!v.numeric) return '숫자가 아닌 값이 있어 계산할 수 없습니다';
+      if (mode() === 'reverse' && v.scale === 'nominal') return '명목 척도는 역코딩할 수 없습니다 (척도를 서열이나 연속으로 바꾸세요)';
+      return '';
+    }
+
+    function renderList() {
+      var prev = selected();
+      $('varlist').innerHTML = state.vars.map(function (v) {
+        var why = usable(v);
+        return '<label class="' + (why ? 'off' : '') + '" title="' + esc(why) + '"><input type="checkbox" data-name="' + esc(v.name) + '"' +
+          (why ? ' disabled' : (prev.indexOf(v.name) >= 0 ? ' checked' : '')) + '> ' + esc(v.name) +
+          (v.label ? ' — ' + esc(v.label) : '') + ' <span class="muted">(' + ({ nominal: '명목', ordinal: '서열', scale: '연속' }[v.scale] || '') + ')</span></label>';
+      }).join('');
+      updateSelection();
+    }
+
+    function selected() {
+      return [].map.call($('varlist').querySelectorAll('input:checked'), function (i) { return i.dataset.name; });
+    }
+
+    function updateSelection() {
+      var names = selected();
+      $('selCount').textContent = names.length ? names.length + '개 선택' : '';
+      if (!state.minValidTouched) $('minValid').value = names.length >= 2 ? names.length : '';
+      $('minValid').max = names.length || '';
+      // 역코딩 범위 안내: 값 레이블에 적힌 범위가 있으면 그것을, 없으면 데이터의 최솟값·최댓값을 채운다
+      var info = state.vars.filter(function (v) { return names.indexOf(v.name) >= 0; });
+      var lo = null, hi = null, dlo = null, dhi = null;
+      info.forEach(function (v) {
+        if (v.labelMin !== null) { lo = lo === null ? v.labelMin : Math.min(lo, v.labelMin); hi = hi === null ? v.labelMax : Math.max(hi, v.labelMax); }
+        if (v.dataMin !== null) { dlo = dlo === null ? v.dataMin : Math.min(dlo, v.dataMin); dhi = dhi === null ? v.dataMax : Math.max(dhi, v.dataMax); }
+      });
+      var fromLo = lo !== null ? lo : dlo, fromHi = hi !== null ? hi : dhi;
+      if (info.length && mode() === 'reverse') {
+        if (!$('min').dataset.touched && fromLo !== null) $('min').value = fromLo;
+        if (!$('max').dataset.touched && fromHi !== null) $('max').value = fromHi;
+        $('rangeHint').textContent = '선택한 변수의 ' + (lo !== null ? '값 레이블에 적힌 범위는 ' + lo + '~' + hi + ', ' : '') + '데이터의 값은 ' + (dlo === null ? '없음' : dlo + '~' + dhi) +
+          '입니다. 설문의 실제 척도 범위(예: 1~5)와 맞는지 확인하세요 (아무도 고르지 않은 값이 있을 수 있습니다).';
+      } else {
+        $('rangeHint').textContent = '';
+      }
+      hidePreview();
+    }
+
+    function updateMode() {
+      var m = mode();
+      $('modeHelp').textContent = HELP[m];
+      $('optReverse').style.display = m === 'reverse' ? '' : 'none';
+      $('rangeHint').style.display = m === 'reverse' ? '' : 'none';
+      $('optAgg').style.display = m === 'agg' ? '' : 'none';
+      $('aggHint').style.display = m === 'agg' ? '' : 'none';
+      $('optZ').style.display = m === 'z' ? '' : 'none';
+      renderList();
+    }
+
+    function hidePreview() { $('previewBox').style.display = 'none'; setMsg(''); }
+
+    function request() {
+      var m = mode(), names = selected();
+      if (m === 'reverse') return { kind: 'reverse', vars: names, min: $('min').value, max: $('max').value, suffix: $('suffixR').value };
+      if (m === 'z') return { kind: 'z', vars: names, suffix: $('suffixZ').value };
+      return { kind: aggKind(), vars: names, name: $('aggName').value, minValid: $('minValid').value };
+    }
+
+    function renderPreview(p) {
+      var w = p.warnings.map(function (t) { return '<div class="warn">' + esc(t) + '</div>'; }).join('');
+      $('previewWarn').innerHTML = w;
+      $('previewTable').innerHTML = '<table class="prev"><thead><tr><th>열</th><th>변수명</th><th>라벨</th><th>유효</th><th>결측</th><th>최솟값</th><th>최댓값</th><th>평균</th><th>앞의 값</th></tr></thead><tbody>' +
+        p.columns.map(function (c) {
+          return '<tr><td>' + esc(c.column) + '</td><td>' + esc(c.name) + '</td><td>' + esc(c.label) + '</td><td class="r">' + c.valid + '</td><td class="r">' + c.missing +
+            '</td><td class="r">' + fmt(c.min) + '</td><td class="r">' + fmt(c.max) + '</td><td class="r">' + fmt(c.mean) + '</td><td>' + esc(c.sample.map(function (v) { return v === null ? '·' : fmt(v); }).join(', ')) + '</td></tr>';
+        }).join('') + '</tbody></table><div class="muted" style="margin-top:4px">데이터 탭 ' + esc(p.columns[0].column) + (p.columns.length > 1 ? '~' + esc(p.columns[p.columns.length - 1].column) : '') + '열에 새로 씁니다. 결측은 빈 칸으로 둡니다.</div>';
+      $('previewBox').style.display = '';
+    }
+
+    function loadState(doneMsg) {
+      google.script.run.withSuccessHandler(function (info) {
+        state.vars = info.vars; state.n = info.n;
+        $('summary').textContent = '변수 ' + info.vars.length + '개, 사례 ' + info.n + '건';
+        updateMode();
+        if (doneMsg) setMsg(doneMsg, 'ok');     // 목록을 다시 그리면 메시지가 지워지므로 그 뒤에 보인다
+      }).withFailureHandler(fail).calcState();
+    }
+
+    document.querySelectorAll('input[name=mode]').forEach(function (r) { r.addEventListener('change', updateMode); });
+    $('varlist').addEventListener('change', updateSelection);
+    $('selAll').addEventListener('click', function () {
+      [].forEach.call($('varlist').querySelectorAll('input:not(:disabled)'), function (i) { i.checked = true; });
+      updateSelection();
+    });
+    $('selNone').addEventListener('click', function () {
+      [].forEach.call($('varlist').querySelectorAll('input'), function (i) { i.checked = false; });
+      updateSelection();
+    });
+    ['min', 'max'].forEach(function (id) { $(id).addEventListener('input', function () { $(id).dataset.touched = '1'; hidePreview(); }); });
+    $('minValid').addEventListener('input', function () { state.minValidTouched = true; hidePreview(); });
+    ['suffixR', 'suffixZ', 'aggName'].forEach(function (id) { $(id).addEventListener('input', hidePreview); });
+    document.querySelectorAll('input[name=aggKind]').forEach(function (r) {
+      r.addEventListener('change', function () {
+        if (['평균', '합계', ''].indexOf($('aggName').value.trim()) >= 0) $('aggName').value = aggKind() === 'sum' ? '합계' : '평균';
+        hidePreview();
+      });
+    });
+
+    $('preview').addEventListener('click', function () {
+      setMsg('확인하는 중…', 'muted');
+      $('preview').disabled = true;
+      google.script.run
+        .withSuccessHandler(function (p) { $('preview').disabled = false; setMsg(''); renderPreview(p); })
+        .withFailureHandler(function (err) { $('preview').disabled = false; $('previewBox').style.display = 'none'; setMsg(esc(err.message || err), 'error'); })
+        .calcPlan(request());
+    });
+
+    $('cancel').addEventListener('click', hidePreview);
+
+    $('apply').addEventListener('click', function () {
+      $('apply').disabled = $('cancel').disabled = $('preview').disabled = true;
+      setMsg('데이터 탭에 쓰는 중…', 'muted');
+      google.script.run
+        .withSuccessHandler(function (r) {
+          $('apply').disabled = $('cancel').disabled = $('preview').disabled = false;
+          $('previewBox').style.display = 'none';
+          state.minValidTouched = false;
+          ['min', 'max'].forEach(function (id) { $(id).dataset.touched = ''; $(id).value = ''; });
+          loadState(esc('데이터 탭 ' + r.firstColumn + (r.lastColumn !== r.firstColumn ? '~' + r.lastColumn : '') + '열에 ' + r.added.join(', ') + '을(를) 추가했습니다 (' + r.rows + '행). 변수정의 탭에도 등록했습니다. 분석 창이 열려 있으면 새로고침을 누르세요.'));
+        })
+        .withFailureHandler(function (err) {
+          $('apply').disabled = $('cancel').disabled = $('preview').disabled = false;
+          setMsg(esc(err.message || err), 'error');
+        })
+        .calcApply(request());
+    });
+
+    loadState();
+  </script>
+</body>
+</html>

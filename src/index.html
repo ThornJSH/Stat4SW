@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <?!= include('style') ?>
+</head>
+<body>
+  <div class="layout">
+    <aside class="col pane-vars">
+      <div class="head">
+        <strong>변수</strong>
+        <button id="reload" type="button">새로고침</button>
+      </div>
+      <div id="summary" class="muted" role="status" aria-live="polite">불러오는 중…</div>
+      <input id="varSearch" type="search" placeholder="변수 검색 (이름·라벨)" aria-label="변수 검색" autocomplete="off">
+      <div id="varCount" class="muted"></div>
+      <ul id="varlist" aria-label="변수 목록"></ul>
+      <div id="warnings"></div>
+    </aside>
+
+    <section class="col pane-setup">
+      <div class="head"><strong>분석</strong></div>
+      <select id="analysis" aria-label="분석 선택"></select>
+      <div id="modeHint" class="muted"></div>
+      <div id="analysisDesc" class="desc"></div>
+      <button type="button" id="advisorOpen" class="linkbtn">어떤 분석을 쓸지 모르겠어요? 도우미 열기</button>
+      <div id="advisor" class="advisor" hidden></div>
+      <div id="roles"></div>
+      <div id="options"></div>
+      <div id="extras"></div>
+      <button id="run" class="primary" type="button">실행</button>
+      <label class="auto" title="분석을 실행할 때마다 결과를 시트의 결과 탭에도 씁니다 (창을 닫아도 결과가 남습니다)"><input type="checkbox" id="autoExport"> 실행할 때마다 결과 탭에도 저장</label>
+      <div id="status" class="muted" role="status" aria-live="polite"></div>
+    </section>
+
+    <main class="col pane-result">
+      <div class="head">
+        <strong>결과</strong>
+        <span>
+          <button id="exportAll" type="button" title="화면의 결과를 모두 결과 탭에 씁니다">전체를 시트로</button>
+          <button id="clear" type="button">전체 지우기</button>
+        </span>
+      </div>
+      <div id="exportStatus" class="muted" role="status" aria-live="polite"></div>
+      <p id="empty" class="muted">분석을 실행하면 결과가 여기에 쌓입니다. 창을 닫으면 결과는 사라집니다.</p>
+      <div id="output"></div>
+    </main>
+  </div>
+  <script>var STAT4SW_MODE_BOOT = <?!= modeBootJson_() ?>;</script>
+  <?!= include('client') ?>
+</body>
+</html>

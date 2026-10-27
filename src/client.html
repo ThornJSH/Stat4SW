@@ -1,0 +1,1356 @@
+<script>
+  var SCALE_LABEL = { scale: '연속', ordinal: '서열', nominal: '명목' };
+
+  /**
+   * 분석 정의: 역할 칸(roles)과 옵션. 분석을 추가하면 여기에 등록하고
+   * 서버 Api.js 의 analysisFor_ 에도 같은 키를 추가한다.
+   * 역할 칸의 key 는 요청 객체의 속성 이름이 된다 (예: request.vars).
+   */
+  /** 분석 선택 목록의 묶음 순서 (각 분석의 group). 분석을 추가하면 group 과 desc(언제 쓰나 한 줄)를 쓴다. 옵션에 adv: true 를 붙이면 "세부 옵션"으로 접힌다. */
+  var ANALYSIS_GROUPS = ['기초 살펴보기', '평균 비교', '순위로 비교 (비모수)', '관계 보기', '영향·예측', '설문 척도 점검', '다변량 탐색', '생존 분석 (사건까지의 시간)', '연구 설계 (데이터 필요 없음)'];
+
+  var ANALYSES = {
+    frequencies: {
+      label: '빈도분석',
+      group: '기초 살펴보기',
+      desc: '각 값이 몇 번 나왔는지 센다. 성별, 학력 같은 범주형 변수의 분포를 볼 때.',
+      roles: [{ key: 'vars', label: '변수', accept: ['scale', 'ordinal', 'nominal'] }],
+      options: [{ key: 'barChart', label: '막대그래프' }]
+    },
+    descriptives: {
+      label: '기술통계',
+      group: '기초 살펴보기',
+      desc: '평균, 표준편차, 최솟값·최댓값 등으로 숫자 변수를 요약한다.',
+      roles: [{ key: 'vars', label: '변수', accept: ['scale', 'ordinal'] }],
+      options: [
+        { key: 'listwise', adv: true, label: '목록별 결측 제거' },
+        { key: 'range', adv: true, label: '범위' },
+        { key: 'sum', adv: true, label: '합계' },
+        { key: 'seMean', adv: true, label: '평균의 표준오차' },
+        { key: 'variance', adv: true, label: '분산' },
+        { key: 'skewness', label: '왜도' },
+        { key: 'kurtosis', label: '첨도' },
+        { key: 'histogram', label: '히스토그램 (정규곡선)' }
+      ]
+    },
+    normality: {
+      label: '정규성 검정 (Shapiro-Wilk, Jarque-Bera)',
+      group: '기초 살펴보기',
+      desc: '숫자 변수가 정규분포에 가까운지 검정한다. t검정·ANOVA 전에 가정을 확인할 때.',
+      roles: [{ key: 'vars', label: '변수', accept: ['scale', 'ordinal'] }],
+      options: []
+    },
+    levene: {
+      label: '등분산 검정 (Levene)',
+      group: '기초 살펴보기',
+      desc: '집단 사이에 흩어진 정도(분산)가 같은지 검정한다. 집단 비교 전 가정 확인용.',
+      roles: [
+        { key: 'dependent', label: '종속변수', accept: ['scale', 'ordinal'] },
+        { key: 'factor', label: '집단변수', accept: ['nominal', 'ordinal'], max: 1 }
+      ],
+      options: [{ key: 'median', label: '중앙값 기준 (Brown-Forsythe)' }]
+    },
+    ttest1: {
+      label: '일표본 t검정',
+      group: '평균 비교',
+      desc: '한 집단의 평균이 기준값(예: 70점)과 다른지 비교한다.',
+      roles: [{ key: 'vars', label: '변수', accept: ['scale', 'ordinal'] }],
+      options: [
+        { key: 'testValue', label: '검정값', type: 'number', def: 0 },
+        { key: 'assumptions', label: '가정 점검 (정규성, 비모수 추천)', def: true },
+        { key: 'effect', label: "효과크기 (Cohen's d, Hedges' g)", def: true },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    ttestInd: {
+      label: '독립표본 t검정',
+      group: '평균 비교',
+      desc: '서로 다른 두 집단(예: 남·여)의 평균이 다른지 비교한다.',
+      roles: [
+        { key: 'dependent', label: '종속변수', accept: ['scale', 'ordinal'] },
+        { key: 'factor', label: '집단변수 (집단 2개)', accept: ['nominal', 'ordinal'], max: 1 }
+      ],
+      options: [
+        { key: 'assumptions', label: '가정 점검 (정규성·등분산, 비모수 추천)', def: true },
+        { key: 'effect', label: "효과크기 (Cohen's d, Hedges' g)", def: true },
+        { key: 'boxplot', label: '상자그림' },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    ttestPaired: {
+      label: '대응표본 t검정',
+      group: '평균 비교',
+      desc: '같은 사람의 두 측정(예: 사전·사후)이 달라졌는지 비교한다.',
+      roles: [
+        { key: 'first', label: '변수1', accept: ['scale', 'ordinal'], max: 1 },
+        { key: 'second', label: '변수2', accept: ['scale', 'ordinal'], max: 1 }
+      ],
+      options: [
+        { key: 'assumptions', label: '가정 점검 (차이의 정규성, 비모수 추천)', def: true },
+        { key: 'effect', label: "효과크기 (Cohen's d_z, d_av, Hedges' g)", def: true },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    anova: {
+      label: '일원 분산분석 (ANOVA)',
+      group: '평균 비교',
+      desc: '세 집단 이상의 평균이 다른지 비교한다. 다르면 사후검정으로 어느 집단 사이인지 본다.',
+      roles: [
+        { key: 'dependent', label: '종속변수', accept: ['scale', 'ordinal'] },
+        { key: 'factor', label: '집단변수', accept: ['nominal', 'ordinal'], max: 1 }
+      ],
+      options: [
+        { key: 'levene', label: '등분산 검정 (Levene)', def: true },
+        { key: 'effect', label: '효과크기 (η², ω²)', def: true },
+        { key: 'assumptions', label: '가정 점검 (정규성·등분산, 비모수 추천)', def: true },
+        { key: 'welch', adv: true, label: 'Welch, Brown-Forsythe 강건 검정' },
+        { key: 'tukey', label: '사후검정: Tukey HSD' },
+        { key: 'gameshowell', adv: true, label: '사후검정: Games-Howell' },
+        { key: 'bonferroni', adv: true, label: '사후검정: Bonferroni' },
+        { key: 'scheffe', adv: true, label: '사후검정: Scheffé' },
+        { key: 'lsd', adv: true, label: '사후검정: LSD (보정 없음)' },
+        { key: 'sidak', adv: true, label: '사후검정: Šidák' },
+        { key: 'dunnett', adv: true, label: '사후검정: Dunnett (통제집단과 비교)' },
+        { key: 'control', adv: true, label: 'Dunnett의 통제집단 (집단 값이나 값 레이블, 비우면 첫 집단)', type: 'number', def: '' },
+        { key: 'boxplot', label: '상자그림' },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    anova2: {
+      label: '이원 분산분석 (요인 2개)',
+      group: '평균 비교',
+      desc: '집단을 나누는 기준이 2가지일 때(예: 성별 × 프로그램) 두 요인의 효과와 상호작용(조합 효과)을 한 번에 검정한다.',
+      roles: [
+        { key: 'dependent', label: '종속변수', accept: ['scale', 'ordinal'], max: 1 },
+        { key: 'factor1', label: '요인 1 (범주, 그림의 가로축)', accept: ['nominal', 'ordinal'], max: 1 },
+        { key: 'factor2', label: '요인 2 (범주, 그림의 선)', accept: ['nominal', 'ordinal'], max: 1 }
+      ],
+      options: [
+        { key: 'ss', type: 'select', label: '제곱합 유형', def: 'III', choices: [['III', '유형 III (기본)'], ['II', '유형 II']] },
+        { key: 'levene', label: '등분산 검정 (Levene)', def: true },
+        { key: 'plot', label: '상호작용 그림 (선 그래프)', def: true },
+        { key: 'simple', label: '단순 주효과 (상호작용이 유의할 때)', def: true },
+        { key: 'posthoc', type: 'select', label: '주효과 사후검정 (수준이 3개 이상일 때)', def: 'tukey', choices: [['tukey', 'Tukey HSD'], ['bonferroni', 'Bonferroni'], ['none', '하지 않음']] },
+        { key: 'emmeans', label: '추정 주변평균 (표준오차, 신뢰구간)' },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    rmanova: {
+      label: '반복측정 분산분석 (집단변수는 선택)',
+      group: '평균 비교',
+      desc: '같은 사람을 반복 측정한 평균 변화를 본다 (3회 이상). 집단변수를 넣으면 집단 × 측정 혼합 설계(2회도 가능)가 된다.',
+      roles: [
+        { key: 'vars', label: '측정 변수 (시점 순서대로, 집단변수가 없으면 3개 이상)', accept: ['scale', 'ordinal'] },
+        { key: 'factor', label: '집단변수 (선택: 넣으면 집단 × 측정 혼합 설계)', accept: ['nominal', 'ordinal'], max: 1, optional: true }
+      ],
+      options: [
+        { key: 'posthoc', label: '쌍별 비교 (Bonferroni, 집단변수가 있으면 집단별)', def: true },
+        { key: 'plot', label: '측정별 평균 선 그림 (집단변수가 있으면 상호작용 그림)', def: true },
+        { key: 'simple', label: '단순 효과 (집단변수가 있을 때)', def: true },
+        { key: 'levene', label: '측정별 등분산 검정 (집단변수가 있을 때)', def: true },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    mannWhitney: {
+      label: 'Mann-Whitney U 검정 (비모수, 2집단)',
+      group: '순위로 비교 (비모수)',
+      desc: '두 집단을 순위로 비교한다. 정규분포가 아니거나 서열 척도일 때 독립표본 t검정 대신.',
+      roles: [
+        { key: 'dependent', label: '종속변수', accept: ['scale', 'ordinal'] },
+        { key: 'factor', label: '집단변수 (집단 2개)', accept: ['nominal', 'ordinal'], max: 1 }
+      ],
+      options: [
+        { key: 'effect', label: '효과크기 (r)', def: true },
+        { key: 'boxplot', label: '상자그림' }
+      ]
+    },
+    wilcoxonPaired: {
+      label: 'Wilcoxon 부호순위 검정 (비모수, 대응표본)',
+      group: '순위로 비교 (비모수)',
+      desc: '같은 사람의 두 측정을 순위로 비교한다. 대응표본 t검정 대신.',
+      roles: [
+        { key: 'first', label: '변수1', accept: ['scale', 'ordinal'], max: 1 },
+        { key: 'second', label: '변수2', accept: ['scale', 'ordinal'], max: 1 }
+      ],
+      options: [{ key: 'effect', label: '효과크기 (r)', def: true }]
+    },
+    wilcoxonOne: {
+      label: 'Wilcoxon 부호순위 검정 (비모수, 일표본)',
+      group: '순위로 비교 (비모수)',
+      desc: '한 집단의 중앙값이 기준값과 다른지 순위로 검정한다. 일표본 t검정 대신.',
+      roles: [{ key: 'vars', label: '변수', accept: ['scale', 'ordinal'] }],
+      options: [
+        { key: 'testValue', label: '검정값 (중앙값)', type: 'number', def: 0 },
+        { key: 'effect', label: '효과크기 (r)', def: true }
+      ]
+    },
+    mcnemar: {
+      label: 'McNemar 검정 (비모수, 전·후 예/아니오)',
+      group: '순위로 비교 (비모수)',
+      desc: '같은 사람의 사전·사후 예/아니오 변화(예: 취업 여부)가 달라졌는지 본다. 두 변수는 값이 합쳐서 2가지여야 한다.',
+      roles: [
+        { key: 'first', label: '변수1 (전)', accept: ['nominal', 'ordinal', 'scale'], max: 1 },
+        { key: 'second', label: '변수2 (후)', accept: ['nominal', 'ordinal', 'scale'], max: 1 }
+      ],
+      options: []
+    },
+    ipa: {
+      label: 'IPA 중요도–수행도 분석',
+      group: '설문 척도 점검',
+      desc: '문항별 중요도와 수행도(만족도) 평균을 기준선으로 4사분면에 나눠 먼저 개선할 문항을 찾는다.',
+      roles: [
+        { key: 'importance', label: '중요도 문항 (3개 이상, 수행도와 같은 순서)', accept: ['scale', 'ordinal'] },
+        { key: 'performance', label: '수행도(만족도) 문항 (중요도와 같은 개수, 같은 순서로 짝지음)', accept: ['scale', 'ordinal'] }
+      ],
+      options: [
+        { key: 'baseline', type: 'select', label: '기준선 방식', def: 'mean', choices: [['mean', '문항 평균들의 평균'], ['median', '문항 평균들의 중앙값'], ['custom', '직접 지정 (아래 세부 옵션에 값 입력)']] },
+        { key: 'gap', label: '격차 검정 (문항별 대응표본 t검정, 수행도 − 중요도)', def: true },
+        { key: 'plot', label: 'IPA 사분면 그림', def: true },
+        { key: 'impShift', adv: true, type: 'number', label: '중요도 기준선 이동 (계산값에 더하는 조정, 예: -0.1)', def: 0 },
+        { key: 'perfShift', adv: true, type: 'number', label: '수행도 기준선 이동 (계산값에 더하는 조정, 예: 0.2)', def: 0 },
+        { key: 'impLine', adv: true, type: 'number', label: '중요도 기준선 값 (방식이 직접 지정일 때)', def: '' },
+        { key: 'perfLine', adv: true, type: 'number', label: '수행도 기준선 값 (방식이 직접 지정일 때)', def: '' },
+        { key: 'listwise', adv: true, label: '목록별 제거 (선택한 모든 문항에 값이 있는 사례만; 기본은 문항마다 유효한 값)' }
+      ]
+    },
+    cochran: {
+      label: 'Cochran Q 검정 (예/아니오, 3회 이상 반복측정)',
+      group: '순위로 비교 (비모수)',
+      desc: '같은 사람을 3회 이상 측정한 예/아니오 반응의 성공 비율이 달라졌는지 본다 (McNemar 검정의 3회 이상 확장).',
+      roles: [{ key: 'vars', label: '측정 변수 (3개 이상, 측정 순서대로, 예/아니오 반응)', accept: ['nominal', 'ordinal', 'scale'] }],
+      options: [
+        { key: 'success', label: '성공으로 볼 값 (이 값이 아닌 응답은 모두 실패)', type: 'number', def: 1 },
+        { key: 'posthoc', label: '쌍별 비교 (정확 McNemar, Bonferroni)', def: true },
+        { key: 'plot', label: '측정별 성공 비율 그림', def: true }
+      ]
+    },
+    friedman: {
+      label: 'Friedman 검정 (비모수, 3회 이상 반복측정)',
+      group: '순위로 비교 (비모수)',
+      desc: '같은 사람을 3회 이상 측정한 값(사전·중간·사후)이 달라졌는지 순위로 본다. 변수는 측정한 순서대로 보낸다.',
+      roles: [{ key: 'vars', label: '측정 변수 (3개 이상, 시점 순서대로)', accept: ['scale', 'ordinal'] }],
+      options: [
+        { key: 'posthoc', label: '사후비교: Dunn–Bonferroni', def: true },
+        { key: 'effect', label: "효과크기 (Kendall's W)", def: true },
+        { key: 'boxplot', label: '상자그림' }
+      ]
+    },
+    kruskalWallis: {
+      label: 'Kruskal-Wallis 검정 (비모수, 3집단 이상)',
+      group: '순위로 비교 (비모수)',
+      desc: '세 집단 이상을 순위로 비교한다. ANOVA 대신.',
+      roles: [
+        { key: 'dependent', label: '종속변수', accept: ['scale', 'ordinal'] },
+        { key: 'factor', label: '집단변수', accept: ['nominal', 'ordinal'], max: 1 }
+      ],
+      options: [
+        { key: 'dunn', label: '사후검정: Dunn (Bonferroni 보정)', def: true },
+        { key: 'effect', label: '효과크기 (η²)', def: true },
+        { key: 'boxplot', label: '상자그림' }
+      ]
+    },
+    correlation: {
+      label: '상관분석',
+      group: '관계 보기',
+      desc: '두 숫자 변수가 함께 늘거나 줄어드는 정도(상관계수)를 본다. 통제변수를 넣으면 그 영향을 뺀 편상관을 본다.',
+      roles: [
+        { key: 'vars', label: '변수 (2개 이상)', accept: ['scale', 'ordinal'] },
+        { key: 'controls', label: '통제변수 (선택: 넣으면 편상관)', accept: ['scale', 'ordinal'], optional: true }
+      ],
+      options: [
+        { key: 'pearson', label: '피어슨', def: true },
+        { key: 'spearman', label: '스피어만 순위상관' },
+        { key: 'kendall', label: '켄달 타우-b 순위상관 (표본이 작거나 동순위가 많을 때; 통제변수와는 함께 못 씀)' },
+        { key: 'assumptions', label: '가정 점검 (피어슨의 정규성, 스피어만 추천)', def: true },
+        { key: 'listwise', adv: true, label: '목록별 결측 제거 (기본: 쌍별, 통제변수가 있으면 항상 목록별)' },
+        { key: 'ci', adv: true, label: '피어슨 신뢰구간 (Fisher z)' },
+        { key: 'scatter', label: '산점도 (회귀선, 최대 10쌍; 통제변수가 있으면 통제 후 잔차)' },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    crosstab: {
+      label: '교차분석 (카이제곱)',
+      group: '관계 보기',
+      desc: '두 범주형 변수(예: 성별 × 합격)가 서로 관련 있는지 교차표와 카이제곱으로 검정한다.',
+      roles: [
+        { key: 'rowvar', label: '행 변수', accept: ['nominal', 'ordinal', 'scale'], max: 1 },
+        { key: 'colvar', label: '열 변수', accept: ['nominal', 'ordinal', 'scale'], max: 1 }
+      ],
+      options: [
+        { key: 'expected', label: '기대빈도' },
+        { key: 'rowPct', label: '행 %', def: true },
+        { key: 'colPct', label: '열 %' },
+        { key: 'totalPct', adv: true, label: '전체 %' },
+        { key: 'residual', adv: true, label: '조정된 표준화 잔차' },
+        { key: 'effect', label: '효과크기 (파이, Cramér V, 분할계수)', def: true }
+      ]
+    },
+    reliability: {
+      label: '신뢰도 분석 (크론바흐 α)',
+      group: '설문 척도 점검',
+      desc: '설문 문항들이 같은 것을 일관되게 재는지(크론바흐 α) 확인한다.',
+      roles: [{ key: 'vars', label: '문항 (2개 이상)', accept: ['scale', 'ordinal'] }],
+      options: [
+        { key: 'itemTotal', label: '문항-전체 통계량 (문항 제외 시 α)', def: true },
+        { key: 'itemDesc', label: '문항 통계량 (평균, 표준편차)', def: true },
+        { key: 'interitem', adv: true, label: '문항 간 상관행렬' },
+        { key: 'scale', adv: true, label: '척도 통계량 (문항 합계)' },
+        { key: 'ci', adv: true, label: 'α의 신뢰구간 (Feldt)' },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    logistic: {
+      label: '로지스틱 회귀 (이분형)',
+      group: '영향·예측',
+      desc: '결과가 두 가지(합격/불합격)일 때 어떤 변수가 가능성을 높이는지 본다. 오즈비로 해석한다.',
+      roles: [
+        { key: 'dependent', label: '종속변수 (값이 2가지)', accept: ['nominal', 'ordinal', 'scale'], max: 1 },
+        { key: 'covariates', label: '독립변수 (숫자)', accept: ['scale', 'ordinal'], optional: true },
+        { key: 'factors', label: '범주형 독립변수 (더미 자동 변환)', accept: ['nominal', 'ordinal'], optional: true }
+      ],
+      options: [
+        { key: 'hl', label: 'Hosmer-Lemeshow 적합도', def: true },
+        { key: 'roc', label: 'ROC 곡선과 AUC', def: true },
+        { key: 'cutoff', label: '분류 절단값', type: 'number', def: 0.5 },
+        { key: 'flip', adv: true, label: '작은 값을 사건(1)으로 (기본: 큰 값)' },
+        { key: 'lastRef', adv: true, label: '범주형의 기준 범주를 마지막으로 (기본: 첫 범주)' },
+        { key: 'save', label: '예측확률·예측소속을 데이터 탭에 저장' },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ],
+      extras: 'logistic'
+    },
+    ologit: {
+      label: '서열 로지스틱 회귀 (비례오즈)',
+      group: '영향·예측',
+      desc: '결과가 순서 있는 범주(5점 척도 한 문항 등)일 때 어떤 변수가 더 높은 범주가 될 가능성을 높이는지 본다.',
+      roles: [
+        { key: 'dependent', label: '종속변수 (서열, 값 3~10가지)', accept: ['ordinal', 'scale'], max: 1 },
+        { key: 'covariates', label: '독립변수 (숫자)', accept: ['scale', 'ordinal'], optional: true },
+        { key: 'factors', label: '범주형 독립변수 (더미 자동 변환)', accept: ['nominal', 'ordinal'], optional: true }
+      ],
+      options: [
+        { key: 'parallel', label: '비례오즈 가정 점검 (Brant 검정)', def: true },
+        { key: 'classify', label: '분류표 (가장 가능성이 높은 범주로 예측)' },
+        { key: 'save', label: '예측 범주·범주별 확률을 데이터 탭에 저장' },
+        { key: 'lastRef', adv: true, label: '범주형의 기준 범주를 마지막으로 (기본: 첫 범주)' },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    moderation: {
+      label: '조절효과 분석 (상호작용)',
+      group: '영향·예측',
+      desc: 'X가 Y에 미치는 효과가 조절변수(W)의 값에 따라 달라지는지 본다.',
+      roles: [
+        { key: 'dependent', label: '종속변수 (Y)', accept: ['scale', 'ordinal'], max: 1 },
+        { key: 'independent', label: '독립변수 (X, 숫자)', accept: ['scale', 'ordinal'], max: 1 },
+        { key: 'moderator', label: '조절변수 (W, 숫자 또는 범주)', accept: ['scale', 'ordinal', 'nominal'], max: 1 },
+        { key: 'covariates', label: '공변량 (숫자)', accept: ['scale', 'ordinal'], optional: true }
+      ],
+      options: [
+        { key: 'center', label: '평균 중심화 (X, 연속형 W)', def: true },
+        { key: 'jn', label: 'Johnson-Neyman 구간 (연속형 W)', def: true },
+        { key: 'plot', label: '상호작용 그림', def: true },
+        { key: 'lastRef', adv: true, label: '범주형 W의 기준 범주를 마지막으로 (기본: 첫 범주)' },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    mediation: {
+      label: '매개효과 분석 (간접효과)',
+      group: '영향·예측',
+      desc: 'X가 매개변수(M)를 거쳐 Y에 미치는 간접효과가 있는지 본다.',
+      roles: [
+        { key: 'dependent', label: '종속변수 (Y)', accept: ['scale', 'ordinal'], max: 1 },
+        { key: 'independent', label: '독립변수 (X)', accept: ['scale', 'ordinal'], max: 1 },
+        { key: 'mediators', label: '매개변수 (M, 1개 이상)', accept: ['scale', 'ordinal'] },
+        { key: 'covariates', label: '공변량 (숫자)', accept: ['scale', 'ordinal'], optional: true }
+      ],
+      options: [
+        { key: 'boot', adv: true, label: '부트스트랩 횟수', type: 'number', def: 5000 },
+        { key: 'seed', adv: true, label: '시드 (같으면 같은 결과)', type: 'number', def: 12345 },
+        { key: 'sobel', label: 'Sobel 검정 (참고)', def: true },
+        { key: 'diagram', label: '경로도', def: true },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    distance: {
+      label: '거리·유사도 (마할라노비스 이상치)',
+      group: '다변량 탐색',
+      desc: '사례(또는 변수) 사이가 얼마나 다른지 거리로 재고, 마할라노비스 거리로 다변량 이상치를 찾는다.',
+      roles: [{ key: 'vars', label: '변수 (2개 이상)', accept: ['scale', 'ordinal', 'nominal'] }],
+      options: [
+        { key: 'target', type: 'select', label: '계산 대상', def: 'case', choices: [['case', '사례 간'], ['var', '변수 간']] },
+        { key: 'measure', type: 'select', label: '측도', def: 'euclid', choices: [
+          ['euclid', '유클리드 거리'], ['sqeuclid', '제곱 유클리드 거리'], ['cityblock', '맨해튼(블록) 거리'], ['chebyshev', '체비쇼프 거리'],
+          ['minkowski', '민코프스키 거리'], ['mahalanobis', '마할라노비스 거리'], ['cosineDist', '코사인 거리'], ['cosine', '코사인 유사도'],
+          ['corrDist', '상관 거리 (1 − r)'], ['correlation', '피어슨 상관 (유사도)'], ['matching', '단순일치 (0/1 자료)'],
+          ['jaccard', 'Jaccard (0/1 자료)'], ['dice', 'Dice (0/1 자료)'], ['hamming', 'Hamming 거리 (0/1 자료)']] },
+        { key: 'standardize', type: 'select', label: '표준화 (변수별)', def: 'none', choices: [
+          ['none', '하지 않음'], ['z', 'z점수'], ['range01', '범위 0~1'], ['range11', '범위 −1~1'], ['max1', '최댓값 1'], ['mean1', '평균 1'], ['sd1', '표준편차 1']] },
+        { key: 'outlier', label: '마할라노비스 이상치 점검 (D²)' },
+        { key: 'saveD2', label: '마할라노비스 D²를 데이터 탭에 저장' },
+        { key: 'saveMatrix', label: '근접도 행렬을 새 탭에 저장 (500개까지)' },
+        { key: 'p', adv: true, label: '민코프스키 차수 p', type: 'number', def: 3 }
+      ]
+    },
+    cart: {
+      label: '의사결정나무 (CART)',
+      group: '영향·예측',
+      desc: '변수 값에 따라 사례를 둘씩 나눠 가며 결과(분류 또는 숫자)를 예측하는 규칙 나무를 만든다. 교차검증으로 가지를 쳐서 과적합을 줄인다.',
+      roles: [
+        { key: 'dependent', label: '종속변수 (연속이면 회귀 나무, 아니면 분류 나무)', accept: ['nominal', 'ordinal', 'scale'], max: 1 },
+        { key: 'covariates', label: '예측변수 (숫자)', accept: ['scale', 'ordinal'], optional: true },
+        { key: 'factors', label: '범주형 예측변수', accept: ['nominal', 'ordinal'], optional: true }
+      ],
+      options: [
+        { key: 'maxDepth', label: '최대 깊이 (1~8)', type: 'number', def: 4 },
+        { key: 'prune', type: 'select', label: '가지치기', def: 'cv1se', choices: [['cv1se', '교차검증 1 표준오차 규칙 (권장)'], ['cv', '교차검증 최소 오차'], ['none', '하지 않음']] },
+        { key: 'save', label: '예측값·소속 잎 노드를 데이터 탭에 저장' },
+        { key: 'minSplit', adv: true, label: '분할하려면 노드의 최소 사례 수', type: 'number', def: 20 },
+        { key: 'minLeaf', adv: true, label: '잎의 최소 사례 수', type: 'number', def: 7 },
+        { key: 'folds', adv: true, label: '교차검증 폴드 수', type: 'number', def: 10 },
+        { key: 'seed', adv: true, label: '시드 (같으면 같은 결과)', type: 'number', def: 12345 },
+        { key: 'mode', adv: true, type: 'select', label: '나무 종류', def: 'auto', choices: [['auto', '자동 (척도에 따라)'], ['class', '분류 나무'], ['reg', '회귀 나무']] }
+      ]
+    },
+    kmeans: {
+      label: 'k-평균 군집분석',
+      group: '다변량 탐색',
+      desc: '비슷한 사례끼리 묶어 군집(집단)을 만든다. 군집 수는 직접 정하고, 엘보와 실루엣으로 참고한다.',
+      roles: [{ key: 'vars', label: '변수 (2개 이상, 숫자)', accept: ['scale', 'ordinal'] }],
+      options: [
+        { key: 'k', label: '군집 수 (2~10)', type: 'number', def: 3 },
+        { key: 'standardize', type: 'select', label: '표준화 (변수별)', def: 'z', choices: [['z', 'z점수 (권장)'], ['range01', '범위 0~1'], ['none', '하지 않음']] },
+        { key: 'elbow', label: '군집 수 판단 보조 (k=2~10 엘보, 실루엣)', def: true },
+        { key: 'save', label: '군집 번호·중심까지 거리를 데이터 탭에 저장' },
+        { key: 'seed', adv: true, label: '시드 (같으면 같은 결과)', type: 'number', def: 12345 },
+        { key: 'starts', adv: true, label: '시작 횟수 (가장 좋은 결과 선택)', type: 'number', def: 10 },
+        { key: 'maxIter', adv: true, label: '최대 반복 횟수', type: 'number', def: 100 }
+      ]
+    },
+    psm: {
+      label: '성향점수 매칭 (처치 효과 추정)',
+      group: '다변량 탐색',
+      desc: '처치를 받은 집단과 받지 않은 집단이 비슷해지도록 사례를 짝지어, 선택 편향을 줄인 처치 효과를 추정한다.',
+      roles: [
+        { key: 'treatment', label: '처치 변수 (값 2가지)', accept: ['nominal', 'ordinal', 'scale'], max: 1 },
+        { key: 'covariates', label: '공변량 (숫자)', accept: ['scale', 'ordinal'], optional: true },
+        { key: 'factors', label: '범주형 공변량 (더미 자동 변환)', accept: ['nominal', 'ordinal'], optional: true },
+        { key: 'outcome', label: '결과 변수 (선택, 숫자)', accept: ['scale', 'ordinal'], max: 1, optional: true }
+      ],
+      options: [
+        { key: 'method', type: 'select', label: '매칭 방식', def: 'ps', choices: [['ps', '성향점수 최근접'], ['maha', '캘리퍼 안 마할라노비스']] },
+        { key: 'caliper', label: '캘리퍼 (SD의 배수, 0=없음)', type: 'number', def: 0.2 },
+        { key: 'ratio', label: '처치 1명당 대조 수 (1~5)', type: 'number', def: 1 },
+        { key: 'replace', label: '복원 매칭 (같은 대조를 다시 사용)' },
+        { key: 'save', label: '성향점수·매칭ID·가중치를 데이터 탭에 저장' },
+        { key: 'flip', adv: true, label: '작은 값을 처치로 (기본: 큰 값)' },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    regression: {
+      label: '선형 회귀',
+      group: '영향·예측',
+      desc: '여러 변수로 숫자 결과(Y)를 설명한다. 각 변수의 영향과 설명력(R²)을 본다.',
+      roles: [
+        { key: 'dependent', label: '종속변수', accept: ['scale', 'ordinal'], max: 1 },
+        { key: 'covariates', label: '독립변수 (숫자)', accept: ['scale', 'ordinal'], optional: true },
+        { key: 'factors', label: '범주형 독립변수 (더미 자동 변환)', accept: ['nominal', 'ordinal'], optional: true }
+      ],
+      options: [
+        { key: 'ci', label: 'B의 신뢰구간' },
+        { key: 'collinearity', label: '공선성 진단 (고유값, 조건지수)' },
+        { key: 'dw', label: '더빈-왓슨' },
+        { key: 'lastRef', adv: true, label: '기준 범주를 마지막 범주로 (기본: 첫 범주)' },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    binom: {
+      label: '이항 검정 (성공 비율 검정)',
+      group: '기초 살펴보기',
+      desc: '두 가지로 나뉘는 변수(합격/불합격 등)의 성공 비율이 기준 비율과 다른지 정확한 이항 분포로 검정한다.',
+      roles: [
+        { key: 'vars', label: '변수 (성공·실패로 나뉘는 변수, 여러 개 가능)', accept: ['nominal', 'ordinal', 'scale'] }
+      ],
+      options: [
+        { key: 'success', label: '성공으로 볼 값 (이 값이 아닌 값은 모두 실패)', type: 'number', def: 1 },
+        { key: 'p0', label: '검정 비율 (귀무가설의 성공 확률, 0과 1 사이)', type: 'number', def: 0.5 },
+        { key: 'tails', type: 'select', label: '검정 방향', def: 'two', choices: [['two', '양측 (다르다)'], ['greater', '단측: 성공 비율이 검정 비율보다 크다'], ['less', '단측: 성공 비율이 검정 비율보다 작다']] },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    km: {
+      label: 'Kaplan–Meier 생존분석 (log-rank)',
+      group: '생존 분석 (사건까지의 시간)',
+      desc: '사건(사망·재발·이탈 등)이 일어날 때까지의 시간을 중도절단을 반영해 생존곡선으로 보고 집단 사이를 비교한다.',
+      roles: [
+        { key: 'time', label: '시간 변수 (사건 또는 관찰 종료까지의 시간, 0 이상)', accept: ['scale', 'ordinal'], max: 1 },
+        { key: 'event', label: '사건 변수 (사건이 일어났는지; 사건값 옵션과 같은 값이 사건)', accept: ['nominal', 'ordinal', 'scale'], max: 1 },
+        { key: 'group', label: '집단변수 (선택, 집단 2~10개)', accept: ['nominal', 'ordinal'], optional: true, max: 1 }
+      ],
+      options: [
+        { key: 'eventValue', label: '사건으로 볼 값 (사건 변수의 이 값만 사건, 나머지는 중도절단)', type: 'number', def: 1 },
+        { key: 'times', label: '생존율을 볼 시점 (쉼표로 구분, 비우면 자동)', type: 'number', def: '' },
+        { key: 'tests', label: '집단 비교 검정 (log-rank, Breslow, Tarone–Ware)', def: true },
+        { key: 'pairs', label: '집단이 3개 이상이면 쌍별 비교 (Bonferroni)', def: true },
+        { key: 'plot', label: '생존곡선 그림', def: true },
+        { key: 'table', label: '사건 시점별 생존표 전체 (집단마다 최대 500행)' },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    power: {
+      label: '검정력·표본 크기 계산',
+      group: '연구 설계 (데이터 필요 없음)',
+      desc: '연구를 하기 전에 필요한 표본 크기를 구하거나, 정해진 표본 크기의 검정력·탐지 가능한 효과크기를 구한다.',
+      noData: true,
+      roles: [],
+      options: [
+        { key: 'test', type: 'select', label: '검정', def: 'ttest2', choices: [['ttest2', '독립표본 t검정 (두 집단 평균)'], ['ttest1', '대응표본·일표본 t검정'], ['anova', '일원 분산분석 (3집단 이상)'], ['corr', '상관계수 (피어슨)'], ['prop', '두 비율 비교'], ['reg', '선형 회귀 (전체 R²)']] },
+        { key: 'solve', type: 'select', label: '구하려는 값', def: 'n', choices: [['n', '필요한 표본 크기'], ['power', '검정력 (표본 크기를 알 때)'], ['effect', '탐지 가능한 효과크기 (표본 크기를 알 때)']] },
+        { key: 'effect', type: 'number', label: '효과크기 (비우면 중간 효과: d .5, f .25, r .3, f² .15)', def: '' },
+        { key: 'alpha', type: 'number', label: '유의수준 (α)', def: 0.05 },
+        { key: 'power', type: 'number', label: '목표 검정력 (1 − β)', def: 0.8 },
+        { key: 'n', type: 'number', label: '표본 크기 (검정력·효과크기를 구할 때. t검정·비율·분산분석은 집단당, 상관·회귀는 총)', def: '' },
+        { key: 'k', type: 'number', label: '집단 수 (일원 분산분석)', def: 3 },
+        { key: 'u', type: 'number', label: '독립변수 수 (선형 회귀)', def: 3 },
+        { key: 'p1', type: 'number', label: '집단 1의 비율 (두 비율 비교)', def: '' },
+        { key: 'p2', type: 'number', label: '집단 2의 비율 (두 비율 비교)', def: '' },
+        { key: 'tails', adv: true, type: 'select', label: '검정 방향', def: 'two', choices: [['two', '양측'], ['one', '단측']] },
+        { key: 'ratio', adv: true, type: 'number', label: '집단 크기 비 (집단 2 / 집단 1)', def: 1 },
+        { key: 'dropout', adv: true, type: 'number', label: '예상 탈락률(%)', def: '' }
+      ]
+    },
+    kappa: {
+      label: '평가자 일치도 (kappa)',
+      group: '설문 척도 점검',
+      desc: '두 평가자(또는 두 번)의 범주 평가가 얼마나 일치하는지 본다. 3명 이상이면 Fleiss kappa를 낸다.',
+      roles: [{ key: 'vars', label: '평가자 (2개 이상, 평가자마다 열 하나)', accept: ['nominal', 'ordinal', 'scale'] }],
+      options: [
+        { key: 'weights', type: 'select', label: '가중치 (서열 범주면 가중 kappa)', def: 'none', choices: [['none', '가중치 없음 (명목 범주)'], ['linear', '선형 가중 (서열 범주)'], ['quadratic', '이차 가중 (서열 범주, 가장 흔함)']] },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    icc: {
+      label: '급내상관 (ICC)',
+      group: '설문 척도 점검',
+      desc: '평가자(또는 반복 측정)가 숫자 점수를 얼마나 일치하게 매겼는지 본다. 검사-재검사 신뢰도에도 쓴다.',
+      roles: [{ key: 'vars', label: '평가자·측정 (2개 이상, 평가자마다 열 하나)', accept: ['scale', 'ordinal'] }],
+      options: [
+        { key: 'anova', label: '이원 분산분석표 (평균제곱)', def: true },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    },
+    efa: {
+      label: '탐색적 요인분석 (EFA)',
+      group: '설문 척도 점검',
+      desc: '여러 설문 문항이 몇 개의 묶음(요인)으로 나뉘는지 찾는다. KMO·Bartlett 적합도, 요인 수 판단(스크리), 회전된 적재값을 본다.',
+      roles: [{ key: 'vars', label: '문항 (3개 이상)', accept: ['scale', 'ordinal'] }],
+      options: [
+        { key: 'method', type: 'select', label: '추출 방법', def: 'paf', choices: [['paf', '주축분해 (권장)'], ['pca', '주성분']] },
+        { key: 'rotation', type: 'select', label: '회전', def: 'varimax', choices: [['varimax', '베리맥스 (직각, 권장)'], ['promax', '프로맥스 (사각, 요인 사이 상관 허용)'], ['none', '회전 안 함']] },
+        { key: 'nfactors', type: 'number', label: '요인 수 (비우면 고유값 1 이상)', def: '' },
+        { key: 'scree', label: '스크리 그림', def: true },
+        { key: 'parallel', label: '병렬분석 (요인 수 판단 보조)', def: true },
+        { key: 'sort', label: '적재값 크기순으로 정렬', def: true },
+        { key: 'save', label: '요인 점수를 데이터 탭에 저장 (새 열)' },
+        { key: 'seed', adv: true, label: '병렬분석 시드', type: 'number', def: 2026 },
+        { key: 'suppress', adv: true, label: '작은 적재값 숨기기 기준 (절댓값 미만을 비움)', type: 'number', def: 0.3 }
+      ]
+    },
+    hierarchical: {
+      label: '위계적 회귀 (단계별 변수 추가)',
+      group: '영향·예측',
+      desc: '독립변수를 1~4단계로 나눠 차례로 넣고, 단계마다 설명력(R²)이 얼마나 늘었는지 검정한다. 통제변수를 먼저 넣고 핵심 변수의 추가 효과를 볼 때 쓴다.',
+      roles: [
+        { key: 'dependent', label: '종속변수', accept: ['scale', 'ordinal'], max: 1 },
+        { key: 'block1', label: '1단계 독립변수 (통제변수 등 먼저 넣을 것)', accept: ['scale', 'ordinal', 'nominal'] },
+        { key: 'block2', label: '2단계에 추가할 독립변수', accept: ['scale', 'ordinal', 'nominal'], optional: true },
+        { key: 'block3', label: '3단계에 추가할 독립변수', accept: ['scale', 'ordinal', 'nominal'], optional: true },
+        { key: 'block4', label: '4단계에 추가할 독립변수', accept: ['scale', 'ordinal', 'nominal'], optional: true }
+      ],
+      options: [
+        { key: 'ci', label: 'B의 신뢰구간' },
+        { key: 'collinearity', label: '공선성 진단 (마지막 단계)' },
+        { key: 'dw', label: '더빈-왓슨' },
+        { key: 'lastRef', adv: true, label: '기준 범주를 마지막 범주로 (기본: 첫 범주)' },
+        { key: 'conf', adv: true, label: '신뢰수준(%)', type: 'number', def: 95 }
+      ]
+    }
+  };
+
+  var state = {
+    info: null,
+    analysis: 'frequencies',
+    checked: {},   // 변수 목록에서 체크한 변수 이름 → true
+    assign: {},    // 분석 키 → 역할 키 → [변수 이름]
+    options: {},   // 분석 키 → 옵션 키 → boolean
+    advOpen: {},   // 분석 키 → 세부 옵션을 펼쳤는지
+    summaries: {}, // 변수 이름 → 값 목록 (서버 getValueSummaries). 새로고침하면 비운다
+    loading: {},   // 값 목록을 불러오는 중인 변수 이름 → true
+    extras: {}     // 분석 키 → 값을 보고 고르는 추가 설정 (저장하지 않는다)
+  };
+  var resultCount = 0;
+  // 고급 분석 켜짐 여부와 고급 분석 키. 분석 창이 열릴 때 서버가 끼워 주고(STAT4SW_MODE_BOOT), 새로고침할 때 getModeInfo 로 다시 받는다 (데이터를 못 읽어도 알 수 있게 데이터와 따로)
+  var modeBoot = typeof STAT4SW_MODE_BOOT !== 'undefined' && STAT4SW_MODE_BOOT ? STAT4SW_MODE_BOOT : {};
+  var mode = { advanced: !!modeBoot.advanced, keys: modeBoot.advancedKeys || [], hint: '메뉴 Stat4SW 통계분석 > 설정·관리 > 고급 분석 켜기/끄기' };
+  function isLocked(key) { return !mode.advanced && mode.keys.indexOf(key) >= 0; }
+  var resultStore = {};   // 결과 번호 → 결과 객체 (시트로 내보낼 때 서버에 다시 보낸다)
+  var saveTimer = null;
+
+  function $(id) { return document.getElementById(id); }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* ---------- 화면 도우미 (순수 함수; tests/ui_helpers.test.js 가 이 구간을 꺼내 시험한다) ---------- */
+
+  /** 구글이 영어로 돌려주는 오류를 사용자용 한글 안내로 바꾼다. 알 수 없으면 원래 문구 */
+  function friendlyError(err) {
+    var m = String(err && err.message ? err.message : (err === undefined || err === null ? '' : err));
+    if (/Exceeded maximum execution time|Maximum execution time/i.test(m)) return '계산 시간이 길어 중단되었습니다 (Apps Script 실행 한도 약 6분). 사례 수나 선택한 변수를 줄이거나, 부트스트랩·반복 횟수 같은 옵션을 낮춰 다시 실행하세요.';
+    if (/Authorization is required|authorization.*required|You do not have permission|권한이 없|권한 승인/i.test(m)) return '권한 승인이 필요하거나 풀렸습니다. 시트로 돌아가 메뉴 Stat4SW 통계분석을 다시 열어 권한을 승인한 뒤, 이 창을 닫고 다시 여세요.';
+    if (/Service Spreadsheets timed out|Service timed out|timed out/i.test(m)) return '구글 시트 서비스가 시간 초과되었습니다. 잠시 후 다시 실행해 보세요 (계속되면 사례 수를 줄여 보세요).';
+    if (/Service invoked too many times|too many times|Quota|quota exceeded/i.test(m)) return '짧은 시간에 구글 서비스를 너무 많이 호출해 한도에 걸렸습니다. 몇 분 뒤에 다시 시도하세요.';
+    if (/Failed to fetch|NetworkError|network error|Load failed/i.test(m)) return '네트워크 연결이 끊긴 것 같습니다. 연결을 확인한 뒤 다시 시도하세요.';
+    if (/Script function not found|is not a function/i.test(m)) return '화면과 코드의 버전이 서로 맞지 않습니다. 이 창을 닫고 시트를 새로고침(F5)한 뒤 다시 여세요.';
+    return m;
+  }
+
+  /** 변수 목록 검색: 이름이나 라벨에 검색어가 들어 있으면 true (대소문자 무시, 빈 검색어는 모두 true) */
+  function matchVar(v, q) {
+    var s = String(q === undefined || q === null ? '' : q).trim().toLowerCase();
+    if (!s) return true;
+    return String(v.name).toLowerCase().indexOf(s) >= 0 || String(v.label || '').toLowerCase().indexOf(s) >= 0;
+  }
+
+  /** 데이터가 없을 때(처음 시작) 보여 줄 안내 */
+  var START_GUIDE_HTML = '<div class="guide"><b>처음 시작하기</b><ol>' +
+    '<li>시트의 <b>데이터</b> 탭 1행에 변수 이름을, 2행부터 응답을 붙여 넣으세요.</li>' +
+    '<li>(선택) 메뉴 <b>변수 설정 편집</b>에서 변수의 척도·값 레이블을 정하세요.</li>' +
+    '<li>이 창의 <b>새로고침</b>을 누르고 분석을 고르세요.</li></ol>' +
+    '연습해 보려면 메뉴 <b>예제 데이터 채우기</b>를 쓰세요.</div>';
+
+  /** 데이터·변수정의 탭이 없을 때 보여 줄 안내 */
+  var NEW_WORK_GUIDE_HTML = '<div class="guide">시작하려면 시트 메뉴 <b>Stat4SW 통계분석 &gt; 새 작업 시작 (데이터 모두 지우기)</b>를 누르세요. 없는 <b>데이터</b>·<b>변수정의</b> 탭이 만들어집니다. (다른 탭에 내용이 있으면 지워지므로 나오는 안내를 읽고 진행하세요.)</div>';
+
+  /* ---------- /화면 도우미 ---------- */
+
+  function currentAnalysis() { return ANALYSES[state.analysis]; }
+
+  function assignOf(role) {
+    var a = state.assign[state.analysis] = state.assign[state.analysis] || {};
+    return a[role.key] = a[role.key] || [];
+  }
+
+  function varInfo(name) {
+    var vars = state.info ? state.info.vars : [];
+    for (var i = 0; i < vars.length; i++) if (vars[i].name === name) return vars[i];
+    return null;
+  }
+
+  function acceptingRoles(v) {
+    return currentAnalysis().roles.filter(function (r) { return r.accept.indexOf(v.scale) >= 0; });
+  }
+
+  function isUsed(name) {
+    return currentAnalysis().roles.some(function (r) { return assignOf(r).indexOf(name) >= 0; });
+  }
+
+  /* ---------- 변수 목록 ---------- */
+
+  function renderVars() {
+    if (!state.info) return;
+    var q = $('varSearch').value;
+    var shown = state.info.vars.filter(function (v) { return matchVar(v, q); });
+    $('varCount').textContent = q.trim() ? '검색 결과 ' + shown.length + '개 / 전체 ' + state.info.vars.length + '개' : '';
+    $('varlist').innerHTML = shown.map(function (v) {
+      var title = v.label ? v.label : v.name;
+      var miss = v.missing ? '<span class="var-miss">결측 ' + v.missing + '</span>' : '';
+      var tip = SCALE_LABEL[v.scale] + (v.inferred ? ' (자동 판정)' : '');
+      var accepted = acceptingRoles(v).length > 0;
+      var cls = (isUsed(v.name) ? 'used ' : '') + (accepted ? '' : 'dim');
+      return '<li class="' + cls + '" data-name="' + esc(v.name) + '" title="' + esc(accepted ? title : title + ' — 이 분석에서는 쓸 수 없는 척도입니다') + '">' +
+        '<input type="checkbox"' + (state.checked[v.name] ? ' checked' : '') + (accepted ? '' : ' disabled') + '>' +
+        '<span class="badge ' + v.scale + (v.inferred ? ' inferred' : '') + '" title="' + esc(tip) + '">' + SCALE_LABEL[v.scale] + '</span>' +
+        '<span class="var-name">' + esc(v.name) + '</span>' + miss + '</li>';
+    }).join('') || (q.trim() ? '<li class="muted">검색 결과가 없습니다.</li>' : '');
+  }
+
+  var pendingChecked = false;
+
+  function renderInfo(info) {
+    state.info = info;
+    mode.advanced = !!info.advanced;
+    mode.keys = info.advancedKeys || [];
+    buildAnalysisList();
+    var names = {};
+    info.vars.forEach(function (v) { names[v.name] = true; });
+    state.summaries = {};
+    Object.keys(state.checked).forEach(function (n) { if (!names[n]) delete state.checked[n]; });
+    Object.keys(state.assign).forEach(function (a) {
+      Object.keys(state.assign[a]).forEach(function (r) {
+        state.assign[a][r] = state.assign[a][r].filter(function (n) { return names[n]; });
+      });
+    });
+    $('summary').textContent = '사례 수 ' + info.n + ' · 변수 ' + info.vars.length + '개' + (info.n === 0 ? ' — 2행부터 데이터를 입력하세요' : '');
+    $('warnings').innerHTML = info.warnings.map(function (w) { return '<p>' + esc(w) + '</p>'; }).join('') + (info.n === 0 ? START_GUIDE_HTML : '');
+    renderVars();
+    renderSetup();
+    // 넓게 보는 도우미(메뉴)에서 분석을 골라 열었으면 한 번만 적용한다
+    if (!pendingChecked) {
+      pendingChecked = true;
+      google.script.run.withSuccessHandler(function (p) { if (p && p.key) openAdvised(p.key, p.roles); }).withFailureHandler(function () {}).takePendingAdvice();
+    }
+  }
+
+  function showLoadError(err) {
+    var msg = friendlyError(err);
+    $('summary').innerHTML = '<span class="error">' + esc(msg) + '</span>';
+    $('varlist').innerHTML = '';
+    $('varCount').textContent = '';
+    $('warnings').innerHTML = /탭이 없습니다/.test(msg) ? NEW_WORK_GUIDE_HTML : '';
+  }
+
+  /** 서버가 알려 준 모드를 적용한다. 선택 중이던 분석이 잠기면 목록의 첫 분석으로 바뀌므로 그때만 화면을 다시 그린다 */
+  function applyMode(m) {
+    if (!m) return;
+    var prev = state.analysis;
+    mode.advanced = !!m.advanced;
+    mode.keys = m.advancedKeys || [];
+    buildAnalysisList();
+    if (state.analysis !== prev) { setStatus(''); renderSetup(); }
+  }
+
+  function reload() {
+    $('summary').textContent = '불러오는 중…';
+    google.script.run.withSuccessHandler(applyMode).withFailureHandler(function () {}).getModeInfo();   // 데이터가 없어 아래 호출이 실패해도 모드는 적용된다
+    google.script.run.withSuccessHandler(renderInfo).withFailureHandler(showLoadError).getDatasetInfo();
+  }
+
+  /* ---------- 역할 칸과 옵션 ---------- */
+
+  function renderSetup() {
+    var a = currentAnalysis();
+    $('roles').innerHTML = a.noData ? '<div class="muted">이 분석은 시트의 데이터를 쓰지 않습니다. 아래 옵션만 채우고 실행하세요 (연구를 시작하기 전에도 쓸 수 있습니다).</div>' : a.roles.map(function (r) {
+      var items = assignOf(r).map(function (n) {
+        return '<div class="chip" data-name="' + esc(n) + '"><span>' + esc(n) + '</span><button type="button" data-remove="' + esc(r.key) + '" title="빼기">×</button></div>';
+      }).join('');
+      return '<div class="role" data-role="' + esc(r.key) + '">' +
+        '<div class="role-head"><span>' + esc(r.label) + (r.max === 1 && r.label.indexOf('개') < 0 ? ' <span class="muted">(1개)</span>' : '') + '</span><button type="button" data-send="' + esc(r.key) + '" title="체크한 변수를 보내기">▶ 보내기</button></div>' +
+        '<div class="role-box">' + (items || '<span class="muted">비어 있음</span>') + '</div></div>';
+    }).join('');
+
+    $('analysisDesc').textContent = a.desc || '';
+    var opts = state.options[state.analysis] = state.options[state.analysis] || {};
+    var optHtml = function (o) {
+      if (o.type === 'number') {
+        var val = opts[o.key] !== undefined ? opts[o.key] : String(o.def);
+        return '<label class="num"><span>' + esc(o.label) + '</span><input type="text" inputmode="decimal" data-optnum="' + esc(o.key) + '" value="' + esc(val) + '"></label>';
+      }
+      if (o.type === 'select') {
+        var cur = opts[o.key] !== undefined ? opts[o.key] : o.def;
+        return '<label class="num"><span>' + esc(o.label) + '</span><select data-optsel="' + esc(o.key) + '">' + o.choices.map(function (c) {
+          return '<option value="' + esc(c[0]) + '"' + (c[0] === cur ? ' selected' : '') + '>' + esc(c[1]) + '</option>';
+        }).join('') + '</select></label>';
+      }
+      var on = opts[o.key] !== undefined ? opts[o.key] : !!o.def;
+      return '<label><input type="checkbox" data-opt="' + esc(o.key) + '"' + (on ? ' checked' : '') + '> ' + esc(o.label) + '</label>';
+    };
+    // 기본 옵션은 늘 보이고, 자주 바꾸지 않는 세부 옵션은 접어 둔다 (기본값에서 바뀐 것이 있으면 펼쳐서 보여 준다)
+    var basic = a.options.filter(function (o) { return !o.adv; });
+    var adv = a.options.filter(function (o) { return o.adv; });
+    var changed = adv.some(function (o) {
+      return opts[o.key] !== undefined && (o.type === 'number' || o.type === 'select' ? String(opts[o.key]) !== String(o.def) : !!opts[o.key] !== !!o.def);
+    });
+    $('options').innerHTML = a.options.length
+      ? '<div class="opts"><div class="opts-title">옵션</div>' + basic.map(optHtml).join('') +
+        (adv.length ? '<details class="adv"' + (state.advOpen[state.analysis] || changed ? ' open' : '') + '><summary>세부 옵션 (' + adv.length + '개)</summary>' + adv.map(optHtml).join('') + '</details>' : '') + '</div>'
+      : '';
+    renderExtras();
+    renderVars();
+  }
+
+  /* ---------- 값을 보고 고르는 추가 설정 (로지스틱: 사건으로 볼 값, 기준 범주) ---------- */
+
+  function extrasState() {
+    return state.extras[state.analysis] = state.extras[state.analysis] || { mode: 'auto', depName: '', events: {}, atLeast: '', refs: {} };
+  }
+
+  function roleList(key) {
+    var r = currentAnalysis().roles.filter(function (x) { return x.key === key; })[0];
+    return r ? assignOf(r) : [];
+  }
+
+  function valueText(v) { return v.key + (v.label ? ' — ' + v.label : '') + '  (N=' + v.count + ')'; }
+
+  function renderExtras() {
+    var box = $('extras');
+    if (currentAnalysis().extras !== 'logistic') { box.innerHTML = ''; return; }
+    var ex = extrasState();
+    var dep = roleList('dependent')[0] || '';
+    var facs = roleList('factors');
+    if (ex.depName !== dep) { ex.depName = dep; ex.mode = 'auto'; ex.events = {}; ex.atLeast = ''; }
+    // 아직 모르는 변수의 값 목록을 서버에서 한꺼번에 불러온다 (불러온 뒤 다시 그린다)
+    var fetchList = (dep ? [dep] : []).concat(facs).filter(function (n) { return !state.summaries[n] && !state.loading[n]; });
+    if (fetchList.length) {
+      fetchList.forEach(function (n) { state.loading[n] = true; });
+      google.script.run
+        .withSuccessHandler(function (map) {
+          fetchList.forEach(function (n) { delete state.loading[n]; state.summaries[n] = map[n] || { error: '값 목록을 받지 못했습니다.' }; });
+          renderExtras();
+        })
+        .withFailureHandler(function (err) {
+          fetchList.forEach(function (n) { delete state.loading[n]; state.summaries[n] = { error: err.message || String(err) }; });
+          renderExtras();
+        })
+        .getValueSummaries(fetchList);
+    }
+    var wait = '<span class="muted">값 목록을 불러오는 중…</span>';
+    var html = '';
+    if (dep) {
+      var s = state.summaries[dep];
+      html += '<div class="opts"><div class="opts-title">사건(1)으로 볼 값 — ' + esc(dep) + '</div>';
+      if (!s) html += wait;
+      else if (s.error) html += '<span class="error">' + esc(s.error) + '</span>';
+      else {
+        var keys = {};
+        s.values.forEach(function (v) { keys[v.key] = true; });
+        Object.keys(ex.events).forEach(function (k) { if (!keys[k]) delete ex.events[k]; });
+        if (ex.mode === 'values' && s.truncated) ex.mode = 'auto';
+        if (ex.mode === 'atLeast' && !s.numeric) ex.mode = 'auto';
+        var radio = function (mode, text, disabled) {
+          return '<label><input type="radio" name="evmode" value="' + mode + '"' + (ex.mode === mode ? ' checked' : '') + (disabled ? ' disabled' : '') + '> ' + text + '</label>';
+        };
+        html += radio('auto', '자동 (값이 2가지일 때 큰 값이 사건)');
+        html += radio('values', s.truncated ? '값 직접 고르기 (값이 ' + s.valueCount + '가지로 너무 많음)' : '값을 직접 고르기 (3가지 이상도 가능)', s.truncated);
+        if (ex.mode === 'values') {
+          html += '<div class="sub">' + s.values.map(function (v) {
+            return '<label><input type="checkbox" data-ev="' + esc(v.key) + '"' + (ex.events[v.key] ? ' checked' : '') + '> ' + esc(valueText(v)) + '</label>';
+          }).join('') + '</div>';
+        }
+        if (s.numeric) {
+          html += radio('atLeast', '이 값 이상이면 사건') + '<div class="sub"><input class="inline" type="text" inputmode="decimal" data-atleast="1" value="' + esc(ex.atLeast) + '" title="숫자를 입력하면 이 방식으로 바뀝니다"></div>';
+        }
+        if (ex.mode === 'auto' && s.valueCount !== 2) {
+          html += '<div class="muted">이 변수는 값이 ' + s.valueCount + '가지입니다. 자동은 값이 2가지일 때만 됩니다. 값을 고르거나' + (s.numeric ? ' 기준값을 입력하세요.' : ' 직접 고르세요.') + '</div>';
+        }
+      }
+      html += '</div>';
+    }
+    if (facs.length) {
+      html += '<div class="opts"><div class="opts-title">범주형 독립변수의 기준 범주</div>' + facs.map(function (f) {
+        var fs = state.summaries[f];
+        if (!fs) return '<div>' + esc(f) + ': ' + wait + '</div>';
+        if (fs.error) return '<div class="error">' + esc(f) + ': ' + esc(fs.error) + '</div>';
+        if (fs.truncated) return '<div class="muted">' + esc(f) + ': 범주가 ' + fs.valueCount + '개로 너무 많아 기준을 고를 수 없습니다 (자동).</div>';
+        var cur = ex.refs[f];
+        if (cur !== undefined && !fs.values.some(function (v) { return v.key === cur; })) { delete ex.refs[f]; cur = undefined; }
+        return '<label class="num"><span>' + esc(f) + '</span><select data-ref="' + esc(f) + '"><option value="">자동 (옵션 설정에 따름)</option>' +
+          fs.values.map(function (v) { return '<option value="' + esc(v.key) + '"' + (cur === v.key ? ' selected' : '') + '>' + esc(valueText(v)) + '</option>'; }).join('') + '</select></label>';
+      }).join('') + '</div>';
+    }
+    box.innerHTML = html;
+  }
+
+  /**
+   * 변수를 역할 칸에 넣는다. 같은 분석의 다른 칸에 있던 변수는 그 칸에서 빼고(옮긴다),
+   * 칸에 max 가 있으면 가장 최근에 보낸 변수만 남긴다.
+   */
+  function putInRole(role, name) {
+    currentAnalysis().roles.forEach(function (r) {
+      var l = assignOf(r), i = l.indexOf(name);
+      if (i >= 0) l.splice(i, 1);
+    });
+    var list = assignOf(role);
+    list.push(name);
+    if (role.max && list.length > role.max) list.splice(0, list.length - role.max);
+  }
+
+  function sendChecked(roleKey) {
+    var role = currentAnalysis().roles.filter(function (r) { return r.key === roleKey; })[0];
+    Object.keys(state.checked).forEach(function (name) {
+      var v = varInfo(name);
+      if (v && state.checked[name] && role.accept.indexOf(v.scale) >= 0) putInRole(role, name);
+      delete state.checked[name];
+    });
+    renderSetup();
+  }
+
+  function sendOne(name) {
+    var v = varInfo(name);
+    if (!v) return;
+    var roles = acceptingRoles(v);
+    if (!roles.length) return;
+    // 이미 어느 칸에 있으면 그대로 두고, 아니면 받아 주는 칸 중 비어 있는 첫 칸(없으면 첫 칸)에 넣는다
+    if (!isUsed(name)) {
+      var empty = roles.filter(function (r) { return assignOf(r).length === 0; })[0];
+      putInRole(empty || roles[0], name);
+    }
+    renderSetup();
+  }
+
+  /* ---------- 실행과 결과 ---------- */
+
+  function setStatus(html) { $('status').innerHTML = html; }
+
+  function buildRequest() {
+    var a = currentAnalysis();
+    var req = { analysis: state.analysis, options: {} };
+    var opts = state.options[state.analysis] || {};
+    a.options.forEach(function (o) {
+      req.options[o.key] = o.type === 'number' || o.type === 'select'
+        ? (opts[o.key] !== undefined ? opts[o.key] : String(o.def))
+        : (opts[o.key] !== undefined ? !!opts[o.key] : !!o.def);
+    });
+    for (var i = 0; i < a.roles.length; i++) {
+      var list = assignOf(a.roles[i]);
+      if (!list.length) {
+        if (a.roles[i].optional) continue;   // 선택 칸은 비워 둘 수 있다 (서버가 필요한 조합을 검증)
+        return { error: '"' + a.roles[i].label + '" 칸에 변수를 보내세요.' };
+      }
+      req[a.roles[i].key] = list.slice();
+    }
+    if (a.extras === 'logistic') {
+      var ex = extrasState();
+      if (ex.mode === 'values') {
+        var picked = Object.keys(ex.events);
+        if (!picked.length) return { error: '"사건(1)으로 볼 값"에서 값을 하나 이상 고르세요.' };
+        req.options.eventValues = picked;
+      } else if (ex.mode === 'atLeast') {
+        if (ex.atLeast === '' || !isFinite(Number(ex.atLeast))) return { error: '"이 값 이상이면 사건"에 숫자를 입력하세요.' };
+        req.options.eventAtLeast = ex.atLeast;
+      }
+      var refs = {};
+      roleList('factors').forEach(function (f) { if (ex.refs[f]) refs[f] = ex.refs[f]; });
+      if (Object.keys(refs).length) req.options.refCategories = refs;
+    }
+    return { request: req };
+  }
+
+  function addResult(res) {
+    resultCount++;
+    var wrap = document.createElement('div');
+    wrap.className = 'result-wrap';
+    var t = new Date();
+    var time = ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ':' + ('0' + t.getSeconds()).slice(-2);
+    wrap.dataset.id = String(resultCount);
+    resultStore[resultCount] = res.result;
+    wrap.innerHTML = '<div class="result-tools"><span>#' + resultCount + ' · ' + time + '</span><span>' +
+      '<button type="button" data-export="1" title="결과 탭에 표를 씁니다">시트로 내보내기</button> ' +
+      '<button type="button" data-delete="1">삭제</button></span></div>' + res.html;
+    $('output').appendChild(wrap);
+    $('empty').style.display = 'none';
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function run() {
+    var built = buildRequest();
+    if (built.error) { setStatus('<span class="error">' + esc(built.error) + '</span>'); return; }
+    var wo = built.request.options || {};
+    if ((wo.save || wo.saveD2) &&
+        !confirm('분석 결과(예측값 등)를 데이터 탭 맨 오른쪽에 새 열로 저장하고 변수정의에도 등록합니다. 계속할까요? (같은 이름이 있으면 _2, _3 … 을 붙입니다. 원본 열은 바뀌지 않습니다.)')) return;
+    if (wo.saveMatrix && !confirm('근접도 행렬을 새 탭에 저장합니다 (같은 이름이 있으면 _2, _3 … 을 붙입니다). 계속할까요?')) return;
+    $('run').disabled = true;
+    setStatus('계산 중…');
+    google.script.run
+      .withSuccessHandler(function (res) {
+        $('run').disabled = false; setStatus(''); addResult(res);
+        if ($('autoExport').checked) exportIds([String(resultCount)]);   // 옵션: 실행할 때마다 결과 탭에도 저장
+      })
+      .withFailureHandler(function (err) { $('run').disabled = false; setStatus('<span class="error">' + esc(friendlyError(err)) + '</span>'); })
+      .runAnalysis(built.request);
+  }
+
+  /* ---------- 이벤트 ---------- */
+
+  /** 분석 목록: 고급 분석이 꺼져 있으면 기본 분석만 보인다 (묶음에 보일 분석이 없으면 묶음도 숨긴다) */
+  function buildAnalysisList() {
+    var hidden = 0;
+    $('analysis').innerHTML = ANALYSIS_GROUPS.map(function (g) {
+      var keys = Object.keys(ANALYSES).filter(function (k) {
+        if (ANALYSES[k].group !== g) return false;
+        if (isLocked(k)) { hidden++; return false; }
+        return true;
+      });
+      return keys.length ? '<optgroup label="' + esc(g) + '">' + keys.map(function (k) {
+        return '<option value="' + k + '">' + esc(ANALYSES[k].label) + '</option>';
+      }).join('') + '</optgroup>' : '';
+    }).join('');
+    if (isLocked(state.analysis) || !ANALYSES[state.analysis]) {
+      var first = $('analysis').querySelector('option');
+      if (first) state.analysis = first.value;
+    }
+    $('analysis').value = state.analysis;
+    $('modeHint').textContent = mode.advanced
+      ? '고급 분석이 켜져 있습니다 (끄려면 ' + mode.hint + ').'
+      : (hidden ? '고급 분석 ' + hidden + '개는 숨겨져 있습니다 (' + mode.hint + ').' : '');
+  }
+  buildAnalysisList();
+  $('analysis').addEventListener('change', function () {
+    state.analysis = this.value;
+    setStatus('');
+    renderSetup();
+  });
+
+  $('varlist').addEventListener('change', function (e) {
+    var li = e.target.closest('li');
+    if (li && e.target.type === 'checkbox') { state.checked[li.dataset.name] = e.target.checked; if (advisor.open) renderAdvisor(); }
+  });
+  $('varlist').addEventListener('dblclick', function (e) {
+    var li = e.target.closest('li');
+    if (li && e.target.type !== 'checkbox') sendOne(li.dataset.name);
+  });
+
+  $('roles').addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.send) { sendChecked(b.dataset.send); return; }
+    if (b.dataset.remove) {
+      var role = currentAnalysis().roles.filter(function (r) { return r.key === b.dataset.remove; })[0];
+      var list = assignOf(role);
+      var name = b.closest('.chip').dataset.name;
+      list.splice(list.indexOf(name), 1);
+      renderSetup();
+    }
+  });
+
+  $('options').addEventListener('toggle', function (e) {            // toggle 은 버블링하지 않아 캡처로 받는다
+    if (e.target.tagName === 'DETAILS') state.advOpen[state.analysis] = e.target.open;
+  }, true);
+  $('options').addEventListener('change', function (e) {
+    if (e.target.dataset.opt) state.options[state.analysis][e.target.dataset.opt] = e.target.checked;
+    if (e.target.dataset.optnum) state.options[state.analysis][e.target.dataset.optnum] = e.target.value.trim();
+    if (e.target.dataset.optsel) { state.options[state.analysis][e.target.dataset.optsel] = e.target.value; renderSetup(); }
+    scheduleSave();
+  });
+
+  $('extras').addEventListener('change', function (e) {
+    var ex = extrasState(), t = e.target;
+    if (t.name === 'evmode') { ex.mode = t.value; renderExtras(); }
+    else if (t.dataset.ev !== undefined) { if (t.checked) ex.events[t.dataset.ev] = true; else delete ex.events[t.dataset.ev]; }
+    else if (t.dataset.ref !== undefined) { if (t.value) ex.refs[t.dataset.ref] = t.value; else delete ex.refs[t.dataset.ref]; }
+  });
+  $('extras').addEventListener('input', function (e) {
+    if (e.target.dataset.atleast === undefined) return;
+    var ex = extrasState();
+    ex.atLeast = e.target.value.trim();
+    if (ex.mode !== 'atLeast') {          // 숫자를 입력하기 시작하면 이 방식으로 바꾼다 (다시 그린 뒤 입력 칸을 되살린다)
+      ex.mode = 'atLeast';
+      renderExtras();
+      var box = $('extras').querySelector('[data-atleast]');
+      if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+    }
+  });
+
+  /* ---------- 시트로 내보내기 ---------- */
+
+  var exportProgress = '';       // 진행 중인 내보내기의 현재 안내 문구
+  var exporting = false;         // 내보내기가 진행 중이면 다시 누르는 것을 막는다
+
+  function setExportStatus(html) { $('exportStatus').innerHTML = html; }
+  function setExportProgress(html) { exportProgress = html; setExportStatus(html); }
+
+  /** 진행 중에는 내보내기 버튼을 흐리게 하고 글자를 바꾼다 (disabled 로 하면 다시 눌러도 안내를 줄 수 없다) */
+  function setExportBusy(on) {
+    exporting = on;
+    [].forEach.call(document.querySelectorAll('#exportAll, [data-export]'), function (b) {
+      if (on) {
+        if (!b.dataset.label) b.dataset.label = b.textContent;
+        b.textContent = '내보내는 중…';
+        b.classList.add('busy');
+      } else {
+        if (b.dataset.label) b.textContent = b.dataset.label;
+        b.classList.remove('busy');
+      }
+    });
+  }
+
+  function finishExport(html) {
+    setExportBusy(false);
+    exportProgress = '';
+    setExportStatus(html);
+  }
+
+  /**
+   * SVG 요소를 PNG(base64, 2배 해상도)로 바꾼다. 서버(Apps Script)는 SVG를 이미지로 바꿀 수 없어서
+   * 브라우저의 canvas 로 바꾼 뒤 보낸다. 변환하지 못하면 null (그 차트는 안내 줄만 시트에 남는다).
+   */
+  function svgToPng(svg) {
+    return new Promise(function (resolve) {
+      try {
+        var w = Math.round(parseFloat(svg.getAttribute('width'))), h = Math.round(parseFloat(svg.getAttribute('height')));
+        if (!(w > 0 && h > 0)) { resolve(null); return; }
+        var img = new Image();
+        img.onload = function () {
+          try {
+            var canvas = document.createElement('canvas');
+            canvas.width = w * 2; canvas.height = h * 2;
+            var ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve({ png: canvas.toDataURL('image/png').split(',')[1], width: w, height: h });
+          } catch (e) { resolve(null); }
+        };
+        img.onerror = function () { resolve(null); };
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
+      } catch (e) { resolve(null); }
+    });
+  }
+
+  /** 결과마다, 그 결과의 차트 블록 순서대로 화면의 SVG 를 PNG 로 바꾼다 (그릴 데이터가 없던 차트는 null) */
+  function collectChartImages(ids) {
+    return Promise.all(ids.map(function (id) {
+      var wrap = $('output').querySelector('.result-wrap[data-id="' + id + '"]');
+      var charts = resultStore[id].blocks.filter(function (b) { return b.type === 'chart'; }).length;
+      var jobs = [];
+      for (var k = 0; k < charts; k++) {
+        var svg = wrap ? wrap.querySelector('.chart-slot[data-chart="' + k + '"] svg') : null;
+        jobs.push(svg ? svgToPng(svg) : Promise.resolve(null));
+      }
+      return Promise.all(jobs);
+    }));
+  }
+
+  function exportIds(allIds) {
+    var ids = allIds.filter(function (id) { return resultStore[id]; });
+    if (exporting) {
+      // 이미 진행 중: 다시 실행하지 않고 알린 뒤, 잠시 후 진행 문구로 되돌린다
+      setExportStatus('<span class="notice">이미 시트로 내보내는 중입니다. 끝날 때까지 기다려 주세요. 다시 누르지 않아도 됩니다.</span>');
+      setTimeout(function () { if (exporting) setExportStatus(exportProgress); }, 3000);
+      return;
+    }
+    if (!ids.length) { setExportStatus('<span class="error">내보낼 결과가 없습니다.</span>'); return; }
+    var results = ids.map(function (id) { return resultStore[id]; });
+    var totalCharts = results.reduce(function (s, r) { return s + r.blocks.filter(function (b) { return b.type === 'chart'; }).length; }, 0);
+    setExportBusy(true);
+    setExportProgress(totalCharts ? '차트를 그림으로 바꾸는 중…' : '시트에 쓰는 중… (몇 초 걸릴 수 있습니다)');
+    collectChartImages(ids).then(function (images) {
+      var made = images.reduce(function (s, list) { return s + list.filter(Boolean).length; }, 0);
+      setExportProgress('시트에 쓰는 중… (몇 초 걸릴 수 있습니다)');
+      google.script.run
+        .withSuccessHandler(function (r) {
+          var msg = '"' + esc(r.sheet) + '" 탭 ' + r.firstRow + '~' + r.lastRow + '행에 결과 ' + results.length + '개를 썼습니다.';
+          if (totalCharts) {
+            msg += ' 차트 ' + r.images + '개를 그림으로 넣었습니다.' + (made < totalCharts ? ' (' + (totalCharts - made) + '개는 변환하지 못해 안내 줄만 남겼습니다.)' : '');
+            if (r.sheetImages !== null && r.sheetImages !== undefined) msg += ' 결과 탭의 그림 수: ' + r.sheetImages + '개.';
+          }
+          if (r.imageErrors && r.imageErrors.length) {
+            msg += '<br><span class="error">그림을 넣지 못했습니다: ' + r.imageErrors.map(esc).join(' / ') + '</span>';
+          } else if (r.images > 0 && r.sheetImages === 0) {
+            msg += '<br><span class="error">그림 삽입이 오류 없이 끝났지만 결과 탭에 그림이 없습니다. 실행 로그(확장 프로그램 > Apps Script > 실행)를 확인해 주세요.</span>';
+          }
+          // 시트가 그림을 늦게 그리는 경우가 있어서(실제로 몇 초~수십 초 뒤에 나타난 적이 있다) 미리 알려 둔다
+          if (r.images > 0) msg += '<br><span class="muted">그림은 시트에 표시되기까지 몇 초 걸릴 수 있습니다.</span>';
+          finishExport(msg);
+        })
+        .withFailureHandler(function (err) { finishExport('<span class="error">' + esc(friendlyError(err)) + '</span>'); })
+        .exportResults(results, images);
+    }).catch(function (err) { finishExport('<span class="error">' + esc(err && err.message ? err.message : err) + '</span>'); });
+  }
+
+  function visibleResultIds() {
+    return [].map.call($('output').querySelectorAll('.result-wrap'), function (w) { return w.dataset.id; });
+  }
+
+  $('output').addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    var wrap = b.closest('.result-wrap');
+    if (b.dataset.delete) {
+      delete resultStore[wrap.dataset.id];
+      wrap.remove();
+      if (!$('output').children.length) $('empty').style.display = '';
+    } else if (b.dataset.export) {
+      exportIds([wrap.dataset.id]);
+    }
+  });
+  $('exportAll').addEventListener('click', function () { exportIds(visibleResultIds()); });
+  $('clear').addEventListener('click', function () {
+    $('output').innerHTML = '';
+    resultStore = {};
+    setExportStatus('');
+    $('empty').style.display = '';
+  });
+
+  /* ---------- 옵션 기억 (사용자 속성) ---------- */
+
+  function scheduleSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      google.script.run.withFailureHandler(function () {}).saveOptions(state.options);   // 저장하지 못해도 분석에는 영향이 없다
+    }, 600);
+  }
+
+  /** 저장된 옵션 중 현재 분석 정의에 있는 키만, 알맞은 형식으로 복원한다 */
+  function applySavedOptions(saved) {
+    if (!saved || typeof saved !== 'object') return;
+    if (saved.ui && typeof saved.ui.autoExport === 'boolean') {
+      $('autoExport').checked = saved.ui.autoExport;
+      state.options.ui = { autoExport: saved.ui.autoExport };
+    }
+    Object.keys(ANALYSES).forEach(function (key) {
+      var s = saved[key];
+      if (!s || typeof s !== 'object') return;
+      ANALYSES[key].options.forEach(function (o) {
+        var v = s[o.key];
+        if (v === undefined) return;
+        var opts = state.options[key] = state.options[key] || {};
+        if (o.type === 'number') {
+          if (typeof v === 'string' || typeof v === 'number') opts[o.key] = String(v);
+        } else if (o.type === 'select') {
+          if (typeof v === 'string' && o.choices.some(function (c) { return c[0] === v; })) opts[o.key] = v;
+        } else if (typeof v === 'boolean') {
+          opts[o.key] = v;
+        }
+      });
+    });
+    renderSetup();
+  }
+
+  /* ---------- 분석 선택 도우미 ---------- */
+
+  var advisor = { data: null, loading: false, open: false, path: [], auto: null, error: '' };
+
+  function advNode() {
+    var node = advisor.data.tree;
+    advisor.path.forEach(function (i) { node = node.choices[i].next; });
+    return node;
+  }
+
+  function advName(key) { return ANALYSES[key] ? ANALYSES[key].label : key; }
+
+  /** 변수 목록 순서대로 체크한 변수 이름 */
+  function checkedNames() {
+    return state.info ? state.info.vars.filter(function (v) { return state.checked[v.name]; }).map(function (v) { return v.name; }) : [];
+  }
+
+  function advOpenBtn(key, label, roles, cls) {
+    if (isLocked(key)) return '<span class="muted">' + (cls === 'linkbtn' ? esc(label) + ' — ' : '') + '고급 분석입니다. ' + esc(mode.hint) + '로 켠 뒤 열 수 있습니다.</span>';
+    return '<button type="button" class="' + cls + '" data-advopen="' + esc(key) + '"' + (roles ? ' data-advroles="' + esc(JSON.stringify(roles)) + '"' : '') + '>' + esc(label) + '</button>';
+  }
+
+  /** 추천 카드: rec { key, why, parametric } 또는 { name, unsupported, fallback, why }, alts [{ key, why, roles? }], notes, roles(자동 배치) */
+  function advCard(rec, alts, notes, roles) {
+    var h = '<div class="card">';
+    if (rec.unsupported) {
+      h += '<div class="rec warn">' + esc(rec.name) + ' (아직 지원하지 않음)</div><div>' + esc(rec.why) + '</div>' +
+        '<div class="muted">지금은 대신 <b>' + esc(advName(rec.fallback)) + '</b>을(를) 쓸 수 있습니다.</div>' + advOpenBtn(rec.fallback, advName(rec.fallback) + ' 열기', null, 'choice');
+    } else {
+      h += '<div class="rec">추천: ' + esc(advName(rec.key)) + '</div><div>' + esc(rec.why) + '</div>' +
+        advOpenBtn(rec.key, roles ? '이 분석 열기 (체크한 변수를 자동으로 넣음)' : '이 분석 열기', roles, 'choice');
+    }
+    var extra = (notes || []).slice();
+    if (!rec.unsupported && rec.parametric && advisor.data && state.info && state.info.n < advisor.data.smallN) extra.push(advisor.data.smallNote);
+    if (alts && alts.length) {
+      h += '<div class="muted" style="margin-top:4px">함께 볼 만한 분석</div><ul>' + alts.map(function (a) {
+        return '<li>' + advOpenBtn(a.key, advName(a.key), a.roles, 'linkbtn') + ' — ' + esc(a.why) + '</li>';
+      }).join('') + '</ul>';
+    }
+    if (extra.length) h += '<ul>' + extra.map(function (n) { return '<li class="muted">' + esc(n) + '</li>'; }).join('') + '</ul>';
+    return h + '</div>';
+  }
+
+  function renderAdvisor() {
+    var box = $('advisor');
+    if (!advisor.open) { box.hidden = true; return; }
+    box.hidden = false;
+    var h = '<div class="advisor-head"><span>분석 선택 도우미</span><button type="button" class="linkbtn" data-advclose="1">닫기 ×</button></div>';
+    if (advisor.error) h += '<p class="error">' + esc(advisor.error) + '</p>';
+    var names = checkedNames();
+    if (names.length) {
+      h += '<div class="muted" style="margin-top:6px">체크한 변수: ' + esc(names.join(', ')) + '</div>' +
+        '<button type="button" class="choice" data-advauto="1">체크한 변수로 바로 추천받기</button>';
+    } else {
+      h += '<div class="muted" style="margin-top:6px">변수 목록에서 변수를 체크하면 그 변수로 바로 추천받을 수 있습니다. 아니면 아래 질문에 답하세요.</div>';
+    }
+    if (advisor.auto) {
+      h += advisor.auto.none ? '<div class="card warn">' + esc(advisor.auto.message) + '</div>'
+        : advCard({ key: advisor.auto.key, why: advisor.auto.why, parametric: ['ttestInd', 'anova', 'correlation'].indexOf(advisor.auto.key) >= 0 }, advisor.auto.alt, advisor.auto.notes, advisor.auto.roles);
+    }
+    if (!advisor.data) {
+      h += advisor.error ? '' : '<p class="muted">불러오는 중…</p>';
+    } else {
+      var node = advNode();
+      if (node.q) {
+        h += '<div class="q">' + esc(node.q) + '</div>' + node.choices.map(function (c, i) {
+          return '<button type="button" class="choice" data-advchoice="' + i + '">' + esc(c.label) + '</button>';
+        }).join('');
+      } else {
+        h += advCard(node.rec, node.alt, node.notes, null);
+      }
+      if (advisor.path.length) h += '<div class="nav"><button type="button" class="linkbtn" data-advback="1">← 이전 질문</button><button type="button" class="linkbtn" data-advreset="1">처음부터</button></div>';
+    }
+    box.innerHTML = h;
+  }
+
+  function loadAdvisor() {
+    if (advisor.data || advisor.loading) return;
+    advisor.loading = true;
+    google.script.run
+      .withSuccessHandler(function (d) { advisor.data = d; advisor.loading = false; advisor.error = ''; renderAdvisor(); })
+      .withFailureHandler(function (err) { advisor.loading = false; advisor.error = err.message || String(err); renderAdvisor(); })
+      .getAdvisor();
+  }
+
+  /** 추천한 분석을 분석 창에서 연다. roles 가 있으면 변수를 역할 칸에 넣는다 */
+  function openAdvised(key, roles) {
+    if (!ANALYSES[key] || isLocked(key)) return;
+    state.analysis = key;
+    $('analysis').value = key;
+    state.assign[key] = {};
+    if (roles) {
+      Object.keys(roles).forEach(function (rk) {
+        var role = ANALYSES[key].roles.filter(function (r) { return r.key === rk; })[0];
+        if (role) roles[rk].forEach(function (n) { if (varInfo(n)) putInRole(role, n); });
+      });
+      state.checked = {};
+    }
+    setStatus('');
+    renderSetup();
+    advisor.open = false;
+    renderAdvisor();
+  }
+
+  $('advisorOpen').addEventListener('click', function () {
+    advisor.open = !advisor.open;
+    if (advisor.open) loadAdvisor();
+    renderAdvisor();
+  });
+  $('advisor').addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    var d = b.dataset;
+    if (d.advclose) { advisor.open = false; }
+    else if (d.advchoice !== undefined) { advisor.path.push(Number(d.advchoice)); advisor.auto = null; }
+    else if (d.advback) { advisor.path.pop(); }
+    else if (d.advreset) { advisor.path = []; advisor.auto = null; }
+    else if (d.advopen) { openAdvised(d.advopen, d.advroles ? JSON.parse(d.advroles) : null); return; }
+    else if (d.advauto) {
+      advisor.error = '';
+      google.script.run
+        .withSuccessHandler(function (res) { advisor.auto = res; renderAdvisor(); })
+        .withFailureHandler(function (err) { advisor.error = err.message || String(err); renderAdvisor(); })
+        .adviseFromVariables(checkedNames());
+      return;
+    }
+    renderAdvisor();
+  });
+
+  $('run').addEventListener('click', run);
+  $('reload').addEventListener('click', reload);
+  $('varSearch').addEventListener('input', renderVars);
+  $('autoExport').addEventListener('change', function () {
+    state.options.ui = { autoExport: this.checked };
+    scheduleSave();
+  });
+  // 옵션 칸(숫자·글자 입력)에서 Enter 를 누르면 실행한다
+  $('options').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && e.target && e.target.tagName === 'INPUT' && e.target.type === 'text') { e.preventDefault(); run(); }
+  });
+  renderSetup();
+  reload();
+  google.script.run.withSuccessHandler(applySavedOptions).withFailureHandler(function () {}).getSavedOptions();
+</script>

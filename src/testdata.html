@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body { font: 13px/1.5 "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; color: #202124; margin: 14px 18px; }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    h2 { font-size: 13px; margin: 12px 0 4px; }
+    .muted { color: #5f6368; }
+    .warn { background: #fef7e0; border-left: 3px solid #f9ab00; padding: 5px 10px; margin: 8px 0; }
+    .ok { color: #188038; }
+    .error { color: #c5221f; }
+    code { background: #f1f3f4; padding: 0 4px; border-radius: 3px; }
+    select { font: inherit; width: 100%; padding: 4px 6px; border: 1px solid #c4c7c5; border-radius: 4px; }
+    button { font: inherit; padding: 4px 12px; border: 1px solid #dadce0; border-radius: 4px; background: #fff; cursor: pointer; }
+    button:hover:not(:disabled) { background: #f1f3f4; }
+    button:disabled { opacity: .5; cursor: default; }
+    button.primary { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+    button.primary:hover:not(:disabled) { background: #1765cc; }
+    table { border-collapse: collapse; width: 100%; margin-top: 4px; }
+    th { text-align: left; font-weight: normal; color: #5f6368; border-bottom: 1px solid #c4c7c5; padding: 3px 6px; }
+    td { padding: 2px 6px; border-bottom: 1px solid #f1f3f4; }
+    td.r { text-align: right; font-variant-numeric: tabular-nums; }
+    ol { margin: 4px 0 4px 20px; padding: 0; }
+    .buttons { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+    #msg { margin-left: 4px; }
+  </style>
+</head>
+<body>
+  <h1>시험 데이터</h1>
+  <div class="muted">
+    기법별로 <b>파이썬이 독립 계산한 시험 데이터</b>를 <code>데이터</code>·<code>변수정의</code> 탭에 넣습니다. 넣으면 <code>시험안내</code> 탭에 따라 할 순서와 기대 결과가 적힙니다.
+    원래 데이터는 처음 한 번 백업 탭으로 복사해 두고, 아래 <b>원래 데이터로 되돌리기</b>로 복원합니다 (시험 데이터를 여러 번 바꿔 넣어도 백업은 처음 것이 유지됩니다).
+  </div>
+  <div id="backup" class="warn" style="display:none"></div>
+
+  <h2>시험 데이터 고르기</h2>
+  <select id="list" aria-label="시험 데이터"></select>
+  <div id="desc" class="muted" style="margin-top:4px"></div>
+  <h2>분석 창에서 할 일</h2>
+  <ol id="guide"></ol>
+  <div id="expectedBox" style="display:none">
+    <h2>기대 결과 (파이썬 독립 계산)</h2>
+    <table><thead><tr><th>항목</th><th>기준값</th></tr></thead><tbody id="expected"></tbody></table>
+  </div>
+
+  <div class="buttons">
+    <button id="insert" class="primary" type="button">이 시험 데이터 넣기</button>
+    <button id="restore" type="button">원래 데이터로 되돌리기</button>
+    <span id="msg"></span>
+  </div>
+
+  <script>
+    var items = [], backup = null;
+    function $(id) { return document.getElementById(id); }
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+    }
+    function setMsg(html, cls) { $('msg').innerHTML = html ? '<span class="' + (cls || '') + '">' + html + '</span>' : ''; }
+
+    function renderBackup() {
+      var b = $('backup');
+      if (backup) {
+        b.style.display = '';
+        b.innerHTML = '지금 시트에는 <b>시험 데이터</b>가 들어 있습니다. 원래 데이터는 ' + (backup.data || backup.vars ? '백업 탭(' + esc([backup.data, backup.vars].filter(Boolean).join(', ')) + ')에 있습니다.' : '없었습니다 (시험용 탭을 새로 만들었습니다).');
+      } else {
+        b.style.display = 'none';
+      }
+      $('restore').disabled = !backup;
+    }
+
+    function renderList() {
+      var groups = {}, order = [];
+      items.forEach(function (it) {
+        if (!groups[it.analysisLabel]) { groups[it.analysisLabel] = []; order.push(it.analysisLabel); }
+        groups[it.analysisLabel].push(it);
+      });
+      $('list').innerHTML = order.map(function (g) {
+        return '<optgroup label="' + esc(g) + '">' + groups[g].map(function (it) {
+          return '<option value="' + esc(it.id) + '">' + esc(it.title) + '</option>';
+        }).join('') + '</optgroup>';
+      }).join('');
+      renderItem();
+    }
+
+    function current() {
+      var id = $('list').value;
+      return items.filter(function (it) { return it.id === id; })[0];
+    }
+
+    function renderItem() {
+      var it = current();
+      if (!it) return;
+      $('desc').textContent = it.description + ' (사례 ' + it.n + '건, 변수 ' + it.vars.length + '개: ' + it.vars.join(', ') + ')';
+      $('guide').innerHTML = '<li>분석 창을 열고 변수 목록의 새로고침을 누른다.</li>' + it.guide.map(function (g) { return '<li>' + esc(g) + '</li>'; }).join('');
+      $('expectedBox').style.display = it.expected.length ? '' : 'none';
+      $('expected').innerHTML = it.expected.map(function (e) {
+        return '<tr><td>' + esc(e.label) + (e.info ? ' <span class="muted">(참고)</span>' : '') + '</td><td class="r">' + esc(e.value) + '</td></tr>';
+      }).join('');
+      setMsg('');
+    }
+
+    function load() {
+      google.script.run.withSuccessHandler(function (r) {
+        items = r.items; backup = r.backup;
+        renderBackup(); renderList();
+      }).withFailureHandler(function (err) { setMsg(esc(err.message || err), 'error'); }).listTestDatasets();
+    }
+
+    $('list').addEventListener('change', renderItem);
+    $('insert').addEventListener('click', function () {
+      var it = current();
+      if (!it) return;
+      if (!backup && !confirm('"데이터"와 "변수정의" 탭의 현재 내용을 백업 탭으로 복사한 뒤 시험 데이터로 바꿉니다. 계속할까요?')) return;
+      $('insert').disabled = $('restore').disabled = true;
+      setMsg('넣는 중…', 'muted');
+      google.script.run
+        .withSuccessHandler(function (r) { $('insert').disabled = false; backup = r.backup; renderBackup(); setMsg(esc(r.message), 'ok'); })
+        .withFailureHandler(function (err) { $('insert').disabled = false; renderBackup(); setMsg(esc(err.message || err), 'error'); })
+        .insertTestDataset(it.id);
+    });
+    $('restore').addEventListener('click', function () {
+      if (!confirm('시험 데이터를 지우고 처음 백업한 원래 데이터·변수정의 탭으로 되돌립니다. 계속할까요?')) return;
+      $('insert').disabled = $('restore').disabled = true;
+      setMsg('되돌리는 중…', 'muted');
+      google.script.run
+        .withSuccessHandler(function (r) { $('insert').disabled = false; backup = null; renderBackup(); setMsg(esc(r.message), 'ok'); })
+        .withFailureHandler(function (err) { $('insert').disabled = false; renderBackup(); setMsg(esc(err.message || err), 'error'); })
+        .restoreTestBackup();
+    });
+
+    load();
+  </script>
+</body>
+</html>
